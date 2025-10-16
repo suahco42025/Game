@@ -745,7 +745,7 @@
                         };
                         target.onclick = target.ontouchstart = handleClick;
                         
-                        setTimeout(() => { if (target.parentNode && this.active) { target.remove(); this.createTarget(); } }, 2000);
+                        setTimeout(() => { if (target.parentNode && this.active) { target.remove(); this.createTarget(); } }, 60000);
                         gameArea.appendChild(target);
                         this.currentTarget = target;
                     },
@@ -804,7 +804,7 @@
                             setTimeout(() => target.remove(), 200); this.createTarget();
                         };
                         target.onclick = target.ontouchstart = handleClick;
-                        setTimeout(() => { if (target.parentNode && this.active) { target.remove(); this.createTarget(); } }, 2500);
+                        setTimeout(() => { if (target.parentNode && this.active) { target.remove(); this.createTarget(); } }, 10000);
                         gameArea.appendChild(target); this.currentTarget = target;
                     },
                     updateTimer: function() {
@@ -879,7 +879,7 @@
                             const letterEl = document.getElementById('current-letter');
                             letterEl.classList.add('wrong'); playTone(200, 0.2, 'square', 0.05);
                             setTimeout(() => { letterEl.classList.remove('wrong'); this.updateLetter(); }, 500);
-                        }, 3000);
+                        }, 10000);
                     },
                     updateTimer: function() {
                         if (!this.active) return;
@@ -964,7 +964,7 @@
                             wordEl.classList.add('wrong'); playTone(200, 0.3, 'square', 0.05);
                             this.typedSoFar = ''; document.getElementById('typed-so-far').textContent = '';
                             setTimeout(() => { wordEl.classList.remove('wrong'); this.updateWord(); }, 500);
-                        }, 5000);
+                        }, 10000);
                     },
                     updateTimer: function() {
                         if (!this.active) return;
