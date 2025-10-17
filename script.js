@@ -811,7 +811,7 @@ function gameFactory(gameNum, level = 'medium') {
     if (gameNum === 6) {
         return {
             instruction: "The monkeys are hungry! Drag each fruit to the correct monkey.",
-            score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null, fruitTimeout: null, currentFruit: null,
+            score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null, currentFruit: null, isDragging: false, dragOffsetX: 0, dragOffsetY: 0,
             fruits: ['🍎', '🍌', '🍊', '🍇'], fruitTypes: ['apple', 'banana', 'orange', 'grape'],
             start: function(container) {
                 clearGameArea(); this.stop(); this.timeLeft = settings.time;
@@ -829,14 +829,12 @@ function gameFactory(gameNum, level = 'medium') {
                     <div id="game-over6" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
                         <h2>🍎 Feeding Frenzy Over! 🍎</h2><p>Final Fruits: <span id="final-score6">0</span></p><p>Wrong Drops: <span id="final-misses6">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Feed Again!</button>
                     </div>`;
-                const css = `.fruit { position: absolute; font-size: 40px; cursor: grab; transition: transform 0.2s; z-index: 6; user-select: none; } .fruit.dragging { transform: rotate(10deg) scale(1.1); opacity: 0.8; } .monkey-slot { width: 80px; height: 80px; border: 3px dashed #ff6b35; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 10px 0; transition: all 0.3s; } .monkey-slot.drop-success { border-color: #4ecdc4; background: rgba(78, 205, 196, 0.2); transform: scale(1.1); } .monkey-slot.drop-fail { border-color: #ff4757; background: rgba(255, 71, 87, 0.2); animation: shake 0.5s ease; }`;
+                const css = `.fruit { position: absolute; font-size: 40px; cursor: grab; transition: transform 0.2s; z-index: 6; user-select: none; } .fruit.dragging { transform: rotate(10deg) scale(1.2); opacity: 0.8; cursor: grabbing; } .monkey-slot { width: 80px; height: 80px; border: 3px dashed #ff6b35; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 10px 0; transition: all 0.3s; } .monkey-slot.drop-success { border-color: #4ecdc4; background: rgba(78, 205, 196, 0.2); transform: scale(1.1); } .monkey-slot.drop-fail { border-color: #ff4757; background: rgba(255, 71, 87, 0.2); animation: shake 0.5s ease; }`;
                 container.innerHTML = html;
                 const styleEl = document.createElement('style'); styleEl.textContent = css; container.appendChild(styleEl);
                 const monkeysEl = document.getElementById('monkeys6');
                 this.fruitTypes.forEach(type => {
                     const slot = document.createElement('div'); slot.className = 'monkey-slot'; slot.textContent = '🐵'; slot.dataset.fruit = type;
-                    slot.addEventListener('dragover', e => e.preventDefault());
-                    slot.addEventListener('drop', this.handleDrop.bind(this));
                     monkeysEl.appendChild(slot);
                 });
                 this.createFruit(); this.updateTimer();
@@ -844,27 +842,82 @@ function gameFactory(gameNum, level = 'medium') {
             createFruit: function() {
                 if (!this.active) return; if (this.currentFruit) this.currentFruit.remove();
                 const idx = Math.floor(Math.random() * this.fruits.length);
-                const fruit = document.createElement('div'); fruit.className = 'fruit'; fruit.draggable = true; fruit.textContent = this.fruits[idx]; fruit.dataset.fruit = this.fruitTypes[idx];
+                const fruit = document.createElement('div'); fruit.className = 'fruit'; fruit.textContent = this.fruits[idx]; fruit.dataset.fruit = this.fruitTypes[idx];
                 fruit.style.left = '60px'; fruit.style.top = (Math.random() * (window.innerHeight - 100)) + 'px';
-                fruit.addEventListener('dragstart', (e) => { fruit.classList.add('dragging'); e.dataTransfer.setData('text/plain', fruit.dataset.fruit); });
-                fruit.addEventListener('dragend', () => fruit.classList.remove('dragging'));
+                fruit.addEventListener('mousedown', this.handleDragStart.bind(this));
+                fruit.addEventListener('touchstart', this.handleDragStart.bind(this), { passive: false });
                 gameArea.appendChild(fruit); this.currentFruit = fruit;
             },
-            handleDrop: function(e) {
-                e.preventDefault(); if (!this.active) return;
-                const droppedFruit = e.dataTransfer.getData('text/plain');
-                const slotFruit = e.target.dataset.fruit;
-                if (droppedFruit === slotFruit) {
-                    this.score++; document.getElementById('hud-score6').innerHTML = `🍎 Dropped: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill6" style="width: ${Math.min((this.score / 20) * 100, 100)}%"></div></div>`;
-                    e.target.classList.add('drop-success'); playTone(659, 0.2, 'sine', 0.1);
-                    setTimeout(() => e.target.classList.remove('drop-success'), 500);
-                } else {
-                    this.misses++; document.getElementById('hud-misses6').innerHTML = `❌ Wrong: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill6" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
-                    e.target.classList.add('drop-fail'); playTone(200, 0.3, 'square', 0.05);
-                    speak("Oops, that's the wrong monkey!", true);
-                    setTimeout(() => e.target.classList.remove('drop-fail'), 500);
+            handleDragStart: function(e) {
+                if (!this.active || this.isDragging) return;
+                e.preventDefault();
+                this.isDragging = true;
+                this.currentFruit.classList.add('dragging');
+                const rect = this.currentFruit.getBoundingClientRect();
+                const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+                this.dragOffsetX = clientX - rect.left;
+                this.dragOffsetY = clientY - rect.top;
+                window.addEventListener('mousemove', this.handleDragMove.bind(this));
+                window.addEventListener('touchmove', this.handleDragMove.bind(this), { passive: false });
+                window.addEventListener('mouseup', this.handleDragEnd.bind(this));
+                window.addEventListener('touchend', this.handleDragEnd.bind(this));
+            },
+            handleDragMove: function(e) {
+                if (!this.isDragging) return;
+                e.preventDefault();
+                const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+                this.currentFruit.style.left = `${clientX - this.dragOffsetX}px`;
+                this.currentFruit.style.top = `${clientY - this.dragOffsetY}px`;
+            },
+            handleDragEnd: function(e) {
+                if (!this.isDragging) return;
+                e.preventDefault();
+                this.isDragging = false;
+                this.currentFruit.classList.remove('dragging');
+                window.removeEventListener('mousemove', this.handleDragMove.bind(this));
+                window.removeEventListener('touchmove', this.handleDragMove.bind(this));
+                window.removeEventListener('mouseup', this.handleDragEnd.bind(this));
+                window.removeEventListener('touchend', this.handleDragEnd.bind(this));
+
+                const fruitRect = this.currentFruit.getBoundingClientRect();
+                const droppedFruitType = this.currentFruit.dataset.fruit;
+                let droppedOnSlot = false;
+
+                document.querySelectorAll('.monkey-slot').forEach(slot => {
+                    const slotRect = slot.getBoundingClientRect();
+                    if (fruitRect.left < slotRect.right && fruitRect.right > slotRect.left && fruitRect.top < slotRect.bottom && fruitRect.bottom > slotRect.top) {
+                        droppedOnSlot = true;
+                        if (slot.dataset.fruit === droppedFruitType) {
+                            // Correct drop
+                            this.score++; document.getElementById('hud-score6').innerHTML = `🍎 Dropped: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill6" style="width: ${Math.min((this.score / 20) * 100, 100)}%"></div></div>`;
+                            slot.classList.add('drop-success'); playTone(659, 0.2, 'sine', 0.1);
+                            setTimeout(() => slot.classList.remove('drop-success'), 500);
+
+                            // Place fruit inside monkey with low opacity
+                            const fruitEl = this.currentFruit;
+                            fruitEl.style.opacity = '0.4';
+                            fruitEl.style.pointerEvents = 'none'; // Make it unclickable
+                            fruitEl.style.left = `${slotRect.left + (slotRect.width / 2) - (fruitEl.offsetWidth / 2)}px`;
+                            fruitEl.style.top = `${slotRect.top + (slotRect.height / 2) - (fruitEl.offsetHeight / 2)}px`;
+                            this.currentFruit = null; // Detach from game logic so it isn't removed
+                        } else {
+                            this.misses++; document.getElementById('hud-misses6').innerHTML = `❌ Wrong: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill6" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+                            slot.classList.add('drop-fail'); playTone(200, 0.3, 'square', 0.05);
+                            speak("Oops, that's the wrong monkey!", true);
+                            setTimeout(() => slot.classList.remove('drop-fail'), 500);
+                        }
+                    }
+                });
+
+                if (droppedOnSlot) {
+                    this.createFruit(); // Create a new fruit to drag
+                } else if (this.currentFruit) {
+                    // If dropped outside any slot, make the fruit disappear
+                    this.currentFruit.remove();
+                    this.createFruit(); // And create a new one
                 }
-                this.createFruit();
             },
             updateTimer: function() {
                 if (!this.active) return; this.timerId = setTimeout(() => this.updateTimer(), 1000);
@@ -872,7 +925,7 @@ function gameFactory(gameNum, level = 'medium') {
                 this.timeLeft--;
                 if (this.timeLeft < 0) { this.stop(); document.getElementById('final-score6').textContent = this.score; document.getElementById('final-misses6').textContent = this.misses; document.getElementById('game-over6').style.display = 'block'; speak(`Feeding time is over! You fed the monkeys ${this.score} times.`, true); endSession(6, this.score, this.misses); }
             },
-            stop: function() { this.active = false; clearTimeout(this.timerId); if (this.currentFruit) this.currentFruit.remove(); }
+            stop: function() { this.active = false; clearTimeout(this.timerId); if (this.currentFruit) this.currentFruit.remove(); this.isDragging = false; }
         };
     }
     // Game 7: Art Puzzle
@@ -1176,10 +1229,11 @@ function gameFactory(gameNum, level = 'medium') {
             instruction: "Let's learn computer parts! Click on the part I name.",
             score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null,
             parts: [
-                { name: 'Monitor', hotspot: { x: 25, y: 10, w: 50, h: 40 } }, // All values are percentages of the image dimensions
-                { name: 'Keyboard', hotspot: { x: 20, y: 65, w: 60, h: 20 } },
-                { name: 'Mouse', hotspot: { x: 82, y: 68, w: 10, h: 15 } },
-                { name: 'System Unit', hotspot: { x: 5, y: 30, w: 15, h: 55 } }
+                { name: 'Monitor' },
+                { name: 'Keyboard' },
+                { name: 'Mouse' },
+                { name: 'System Unit' },
+                { name: 'Hand on mouse' }
             ],
             partsToFind: [],
             currentPart: null,
@@ -1216,13 +1270,18 @@ function gameFactory(gameNum, level = 'medium') {
                 this.nextPart();
             },
             nextPart: function() {
-                if (this.partsToFind.length === 0) {
+                // Check if all parts in the current round have been found
+                if (this.partsToFind.length === 0 && this.currentPart !== null) {
                     speak("Great job! You found all the parts. Let's start a new round.", true);
+                    this.populateParts(); // Repopulate the images for the new round
                     this.nextRound();
                     return;
                 }
                 this.currentPart = this.partsToFind.pop();
-                document.getElementById('part-prompt').textContent = `Click on the ${this.currentPart.name}`;
+                if (this.currentPart) {
+                    document.getElementById('part-prompt').textContent = `Click on the ${this.currentPart.name}`;
+                    speak(`Click on the ${this.currentPart.name}`, true);
+                }
             },
             populateParts: function() {
                 const area = document.getElementById('pc-picker-area');
