@@ -999,6 +999,173 @@ function gameFactory(gameNum, level = 'medium') {
             stop: function() { this.active = false; clearTimeout(this.timerId); }
         };
     }
+    // Game 8: Sentence Scribe
+    if (gameNum === 8) {
+        return {
+            instruction: "Let's practice typing sentences! Type the sentence exactly as you see it.",
+            score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null, sentenceTimeout: null, currentSentence: '', typedIndex: 0,
+            sentenceList: {
+                easy: ["the cat is on the mat", "a red bug ran", "the sun is hot", "i can see a pig", "we like to play"],
+                medium: ["The quick brown fox jumps over the lazy dog.", "Monkeys love to eat yellow bananas.", "School is a fun place to learn new things."],
+                hard: ["The jungle is a wonderful, exciting place to play with all my friends!", "Practice makes perfect, so let's keep on typing every day!", "Computers can help us learn and create amazing art."]
+            },
+            currentSentenceList: [],
+            handleKey: function(e) {
+                initGlobalAudio(); if (!this.active) return;
+                const sentenceEl = document.getElementById('current-sentence');
+                if (!sentenceEl) return;
+
+                // Allow Backspace to correct mistakes
+                if (e.key === 'Backspace' && this.typedIndex > 0) {
+                    this.typedIndex--;
+                    this.updateSentenceDisplay();
+                    return;
+                }
+
+                // Check for valid character input
+                if (e.key.length > 1) return; // Ignore keys like Shift, Ctrl, etc.
+
+                const expectedChar = this.currentSentence[this.typedIndex];
+                if (e.key === expectedChar) {
+                    this.typedIndex++;
+                    this.updateSentenceDisplay();
+                    playTone(440 + (this.typedIndex * 10), 0.1, 'sine', 0.05);
+
+                    if (this.typedIndex === this.currentSentence.length) {
+                        clearTimeout(this.sentenceTimeout);
+                        this.score++;
+                        document.getElementById('hud-score8').innerHTML = `📜 Sentences: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill8" style="width: ${Math.min((this.score / 10) * 100, 100)}%"></div></div>`;
+                        sentenceEl.classList.add('correct');
+                        playTone(880, 0.3, 'sine', 0.1);
+                        setTimeout(() => { sentenceEl.classList.remove('correct'); this.updateSentence(); }, 500);
+                    }
+                } else {
+                    this.misses++;
+                    document.getElementById('hud-misses8').innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill8" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+                    sentenceEl.classList.add('wrong');
+                    playTone(200, 0.2, 'square', 0.05);
+                    speak("Oops!", true);
+                    setTimeout(() => sentenceEl.classList.remove('wrong'), 500);
+                }
+            },
+            start: function(container) {
+                clearGameArea(); this.stop(); this.timeLeft = settings.time;
+                this.active = true; this.score = 0; this.misses = 0; this.currentSentenceList = this.sentenceList[level];
+                const html = `
+                    <div id="game-hud">
+                        <div class="hud-left"><button class="back-btn" onclick="backToLauncher()">Swing Home! 🏠</button></div>
+                        <div class="hud-center">
+                            <div class="hud-score" id="hud-score8">📜 Sentences: 0 <div class="progress-bar"><div class="progress-fill" id="score-fill8"></div></div></div>
+                            <div class="hud-timer" id="hud-misses8" style="color: #ff4757;">❌ Missed: 0 <div class="progress-bar"><div class="progress-fill" id="miss-fill8" style="background: #ff4757;"></div></div></div>
+                        </div>
+                        <div class="hud-right"><div class="hud-timer" id="hud-timer8">Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill8"></div></div></div></div>
+                    </div>
+                    <div id="current-sentence" style="font-size: 4vw; max-width: 80%; font-weight: bold; color: #ff6b35; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); user-select: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255,255,255,0.8); padding: 20px; border-radius: 15px;"></div>
+                    <div id="game-over8" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
+                        <h2>📜 Scribe Session Over! 📜</h2><p>Final Score: <span id="final-score8">0</span></p><p>Misses: <span id="final-misses8">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Scribe Again!</button>
+                    </div>`;
+                const css = `#current-sentence.correct { color: #4ecdc4; } #current-sentence.wrong { animation: shake 0.5s ease; } .typed-char { color: #4ecdc4; } .untyped-char { color: #a0a0a0; }`;
+                container.innerHTML = html + `<style>${css}</style>`;
+                window.gameKeyHandler = this.handleKey.bind(this); window.addEventListener('keydown', window.gameKeyHandler);
+                this.updateSentence(); this.updateTimer();
+            },
+            updateSentence: function() {
+                this.currentSentence = this.currentSentenceList[Math.floor(Math.random() * this.currentSentenceList.length)];
+                this.typedIndex = 0;
+                this.updateSentenceDisplay();
+            },
+            updateSentenceDisplay: function() {
+                const typedPart = this.currentSentence.substring(0, this.typedIndex);
+                const untypedPart = this.currentSentence.substring(this.typedIndex);
+                document.getElementById('current-sentence').innerHTML = `<span class="typed-char">${typedPart}</span><span class="untyped-char">${untypedPart}</span>`;
+            },
+            updateTimer: function() {
+                if (!this.active) return;
+                this.timerId = setTimeout(() => this.updateTimer(), 1000);
+                document.getElementById('hud-timer8').innerHTML = `Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill8" style="width: ${Math.min((300 - this.timeLeft) / 300 * 100, 100)}%"></div></div>`;
+                this.timeLeft--;
+                if (this.timeLeft < 0) { this.stop(); document.getElementById('final-score8').textContent = this.score; document.getElementById('final-misses8').textContent = this.misses; document.getElementById('game-over8').style.display = 'block'; speak(`Time's up! You typed ${this.score} sentences.`, true); endSession(8, this.score, this.misses); }
+            },
+            stop: function() { this.active = false; clearTimeout(this.timerId); clearTimeout(this.sentenceTimeout); window.removeEventListener('keydown', window.gameKeyHandler); }
+        };
+    }
+    // Game 9: Story Self
+    if (gameNum === 9) {
+        return {
+            instruction: "Let's write about you! Type your answer to the question and press the 'Done!' button.",
+            score: 0, timeLeft: settings.time, active: false, timerId: null,
+            prompts: [
+                "My name is...",
+                "My favorite color is...",
+                "I like to play with...",
+                "My favorite animal is a...",
+                "For fun, I like to...",
+                "Today I feel...",
+                "My best friend is...",
+                "I am good at...",
+                "My favorite food is...",
+                "When I grow up, I want to be...",
+                "A place I want to visit is...",
+                "Something that makes me laugh is...",
+                "My favorite book or story is...",
+                "If I had a superpower, it would be..."
+            ],
+            currentPromptIndex: 0,
+            start: function(container) {
+                clearGameArea(); this.stop(); this.timeLeft = settings.time;
+                this.active = true; this.score = 0; this.currentPromptIndex = 0;
+                const html = `
+                    <div id="game-hud">
+                        <div class="hud-left"><button class="back-btn" onclick="backToLauncher()">Swing Home! 🏠</button></div>
+                        <div class="hud-center">
+                            <div class="hud-score" id="hud-score9">✍️ Stories: 0 <div class="progress-bar"><div class="progress-fill" id="score-fill9"></div></div></div>
+                        </div>
+                        <div class="hud-right"><div class="hud-timer" id="hud-timer9">Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill9"></div></div></div></div>
+                    </div>
+                    <div id="story-self-area" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 80%; max-width: 800px;">
+                        <h2 id="story-prompt" style="font-size: 4vw; color: #ff6b35;"></h2>
+                        <textarea id="story-input" placeholder="Type your sentence here..." style="width: 100%; height: 100px; font-size: 2vw; padding: 10px; border-radius: 15px; border: 3px solid #4ecdc4; margin-top: 20px; font-family: inherit;"></textarea>
+                        <button id="story-submit" class="btn btn-primary" style="margin-top: 20px; font-size: 24px;">Done! 👍</button>
+                    </div>
+                    <div id="game-over9" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
+                        <h2>✍️ Story Time Over! ✍️</h2><p>You wrote <span id="final-score9">0</span> stories about yourself!</p><button onclick="currentGame.start(document.getElementById('game-area'))">Write More!</button>
+                    </div>`;
+                container.innerHTML = html;
+                document.getElementById('story-submit').onclick = this.submitAnswer.bind(this);
+                this.updatePrompt();
+                this.updateTimer();
+            },
+            updatePrompt: function() {
+                if (this.currentPromptIndex >= this.prompts.length) {
+                    this.currentPromptIndex = 0; // Loop back to the start
+                }
+                document.getElementById('story-prompt').textContent = this.prompts[this.currentPromptIndex];
+                document.getElementById('story-input').value = '';
+                document.getElementById('story-input').focus();
+            },
+            submitAnswer: function() {
+                const answer = document.getElementById('story-input').value.trim();
+                if (answer.length > 2) { // Require at least 3 characters
+                    this.score++;
+                    document.getElementById('hud-score9').innerHTML = `✍️ Stories: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill9" style="width: ${Math.min((this.score / 10) * 100, 100)}%"></div></div>`;
+                    playTone(880, 0.3, 'sine', 0.1);
+                    this.currentPromptIndex++;
+                    this.updatePrompt();
+                } else {
+                    playTone(200, 0.2, 'square', 0.05);
+                    speak("Try writing a little more!", true);
+                }
+            },
+            updateTimer: function() {
+                if (!this.active) return;
+                this.timerId = setTimeout(() => this.updateTimer(), 1000);
+                document.getElementById('hud-timer9').innerHTML = `Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill9" style="width: ${Math.min((300 - this.timeLeft) / 300 * 100, 100)}%"></div></div>`;
+                this.timeLeft--;
+                if (this.timeLeft < 0) { this.stop(); document.getElementById('final-score9').textContent = this.score; document.getElementById('game-over9').style.display = 'block'; speak(`Time's up! You wrote ${this.score} sentences about yourself. Great job!`, true); endSession(9, this.score, 0); }
+            },
+            stop: function() { this.active = false; clearTimeout(this.timerId); }
+        };
+    }
     return null; // Return null if game not found
 }
 
