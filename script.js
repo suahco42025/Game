@@ -1005,9 +1005,13 @@ function gameFactory(gameNum, level = 'medium') {
             instruction: "Let's practice typing sentences! Type the sentence exactly as you see it.",
             score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null, sentenceTimeout: null, currentSentence: '', typedIndex: 0,
             sentenceList: {
-                easy: ["the cat is on the mat", "a red bug ran", "the sun is hot", "i can see a pig", "we like to play"],
-                medium: ["The quick brown fox jumps over the lazy dog.", "Monkeys love to eat yellow bananas.", "School is a fun place to learn new things."],
-                hard: ["The jungle is a wonderful, exciting place to play with all my friends!", "Practice makes perfect, so let's keep on typing every day!", "Computers can help us learn and create amazing art."]
+                easy: ["the cat is on the mat", "a red bug ran", "the sun is hot", "i can see a pig", "we like to play", "my dog is big", "i like my mom", "the sky is blue", "we can run fast", "he has a new toy"],
+                medium: [
+                    "The quick brown fox jumps over the lazy dog.", "Monkeys love to eat yellow bananas.", "School is a fun place to learn new things.", "Reading books is a great way to learn.", "What is your favorite game to play outside?", "Let's build a tall tower with these blocks."
+                ],
+                hard: [
+                    "The jungle is a wonderful, exciting place to play with all my friends!", "Practice makes perfect, so let's keep on typing every day!", "Computers can help us learn and create amazing art.", "Technology helps us connect with people all over the world.", "The beautiful rainbow appeared after the rain stopped.", "Problem-solving is fun when we work together as a team."
+                ]
             },
             currentSentenceList: [],
             handleKey: function(e) {
@@ -1015,19 +1019,19 @@ function gameFactory(gameNum, level = 'medium') {
                 const sentenceEl = document.getElementById('current-sentence');
                 if (!sentenceEl) return;
 
-                // Allow Backspace to correct mistakes
+                // Allow Backspace to correct mistakes.
                 if (e.key === 'Backspace' && this.typedIndex > 0) {
                     this.typedIndex--;
                     this.updateSentenceDisplay();
                     return;
                 }
 
-                // Check for valid character input
-                if (e.key.length > 1) return; // Ignore keys like Shift, Ctrl, etc.
+                // Ignore control keys, but allow all printable characters.
+                if (e.key.length > 1 && e.key !== 'Dead') return;
 
                 const expectedChar = this.currentSentence[this.typedIndex];
                 if (e.key === expectedChar) {
-                    this.typedIndex++;
+                    this.typedIndex++; // Move to the next character
                     this.updateSentenceDisplay();
                     playTone(440 + (this.typedIndex * 10), 0.1, 'sine', 0.05);
 
@@ -1162,6 +1166,104 @@ function gameFactory(gameNum, level = 'medium') {
                 document.getElementById('hud-timer9').innerHTML = `Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill9" style="width: ${Math.min((300 - this.timeLeft) / 300 * 100, 100)}%"></div></div>`;
                 this.timeLeft--;
                 if (this.timeLeft < 0) { this.stop(); document.getElementById('final-score9').textContent = this.score; document.getElementById('game-over9').style.display = 'block'; speak(`Time's up! You wrote ${this.score} sentences about yourself. Great job!`, true); endSession(9, this.score, 0); }
+            },
+            stop: function() { this.active = false; clearTimeout(this.timerId); }
+        };
+    }
+    // Game 10: PC Part Picker
+    if (gameNum === 10) {
+        return {
+            instruction: "Let's learn computer parts! Click on the part I name.",
+            score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null,
+            parts: [
+                { name: 'Monitor', hotspot: { x: 25, y: 10, w: 50, h: 40 } }, // All values are percentages of the image dimensions
+                { name: 'Keyboard', hotspot: { x: 20, y: 65, w: 60, h: 20 } },
+                { name: 'Mouse', hotspot: { x: 82, y: 68, w: 10, h: 15 } },
+                { name: 'System Unit', hotspot: { x: 5, y: 30, w: 15, h: 55 } }
+            ],
+            partsToFind: [],
+            currentPart: null,
+            start: function(container) {
+                clearGameArea(); this.stop(); this.timeLeft = settings.time;
+                this.active = true; this.score = 0; this.misses = 0;
+                const html = `
+                    <div id="game-hud">
+                        <div class="hud-left"><button class="back-btn" onclick="backToLauncher()">Swing Home! 🏠</button></div>
+                        <div class="hud-center" style="position: absolute; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; align-items: center;">
+                            <div class="hud-score" id="hud-score10">🖱️ Found: 0 <div class="progress-bar"><div class="progress-fill" id="score-fill10"></div></div></div>
+                            <div class="hud-timer" id="hud-misses10" style="color: #ff4757;">❌ Missed: 0 <div class="progress-bar"><div class="progress-fill" id="miss-fill10" style="background: #ff4757;"></div></div></div>
+                        </div>
+                        <div class="hud-right"><div class="hud-timer" id="hud-timer10">Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill10"></div></div></div></div>
+                    </div>
+                    <div id="pc-picker-container" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 100%;">
+                        <h2 id="part-prompt" style="font-size: 4vw; color: #ff6b35; margin-bottom: 20px; text-shadow: 1px 1px 2px rgba(0,0,0,0.2);"></h2>
+                        <div id="pc-picker-area" style="display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap;">
+                            <!-- Fallback images will be added here by JS -->
+                        </div>
+                    </div>
+                    <div id="game-over10" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
+                        <h2>🖱️ Tech Expert! 🖱️</h2><p>You found <span id="final-score10">0</span> parts!</p><p>Misses: <span id="final-misses10">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Identify More!</button>
+                    </div>`;
+                const css = `.pc-part-img { max-width: 150px; max-height: 150px; cursor: pointer; border: 5px solid transparent; border-radius: 15px; transition: all 0.2s ease; } .pc-part-img:hover { transform: scale(1.1); border-color: #ffc107; }`;
+                container.innerHTML = html + `<style>${css}</style>`;
+                
+                this.populateParts();
+                this.nextRound();
+                this.updateTimer();
+            },
+            nextRound: function() {
+                this.partsToFind = [...this.parts].sort(() => 0.5 - Math.random()); // Shuffle a copy of the parts
+                this.nextPart();
+            },
+            nextPart: function() {
+                if (this.partsToFind.length === 0) {
+                    speak("Great job! You found all the parts. Let's start a new round.", true);
+                    this.nextRound();
+                    return;
+                }
+                this.currentPart = this.partsToFind.pop();
+                document.getElementById('part-prompt').textContent = `Click on the ${this.currentPart.name}`;
+            },
+            populateParts: function() {
+                const area = document.getElementById('pc-picker-area');
+                area.innerHTML = ''; // Clear previous parts
+                this.parts.forEach(part => {
+                    const img = document.createElement('img');
+                    img.src = `Arts/${part.name}.png`; // Assumes images are in Arts folder like in Game 7
+                    img.alt = part.name;
+                    img.dataset.name = part.name;
+                    img.className = 'pc-part-img';
+                    img.onclick = this.handleClick.bind(this);
+                    img.onerror = function() { this.style.display='none'; }; // Hide if image is missing
+                    area.appendChild(img);
+                });
+            },
+            handleClick: function(e) {
+                if (!this.active || !this.currentPart) return;
+                const clickedPartName = e.target.dataset.name;
+
+                if (clickedPartName === this.currentPart.name) {
+                    this.score++;
+                    document.getElementById('hud-score10').innerHTML = `🖱️ Found: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill10" style="width: ${Math.min((this.score / 20) * 100, 100)}%"></div></div>`;
+                    playTone(880, 0.2, 'sine', 0.1);
+                    e.target.style.display = 'none'; // Hide the correctly identified part
+                    this.nextPart();
+                } else {
+                    this.misses++;
+                    document.getElementById('hud-misses10').innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill10" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+                    playTone(200, 0.3, 'square', 0.05);
+                    speak("Oops, that's not it. Try again.", true);
+                    // Add a shake animation for visual feedback
+                    e.target.style.animation = 'shake 0.5s ease';
+                    setTimeout(() => { e.target.style.animation = ''; }, 500);
+                }
+            },
+            updateTimer: function() {
+                if (!this.active) return;
+                this.timerId = setTimeout(() => this.updateTimer(), 1000);
+                document.getElementById('hud-timer10').innerHTML = `Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill10" style="width: ${Math.min((300 - this.timeLeft) / 300 * 100, 100)}%"></div></div>`;
+                this.timeLeft--;
+                if (this.timeLeft < 0) { this.stop(); document.getElementById('final-score10').textContent = this.score; document.getElementById('final-misses10').textContent = this.misses; document.getElementById('game-over10').style.display = 'block'; speak(`Time's up! You identified ${this.score} computer parts. Great work!`, true); endSession(10, this.score, this.misses); }
             },
             stop: function() { this.active = false; clearTimeout(this.timerId); }
         };
