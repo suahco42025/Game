@@ -612,10 +612,13 @@ function gameFactory(gameNum, level = 'medium') {
     // Game 5: Rainbow Painter
     if (gameNum === 5) {
         return {
-            instruction: "Let's paint a picture! First, choose a color from the side. Then, click and drag to color the matching part of the drawing.",
+            instruction: "Let's paint a picture! Follow the instructions to learn how to play.",
             score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null, canvas: null, ctx: null, selectedColor: null, isColoring: false,
             // Define shapes for our picture. A simple house.
             shapes: [],
+            tutorialActive: false,
+            boundResize: null, boundStart: null, boundMove: null, boundEnd: null, // For listener removal
+            tutorialStep: 0,
             colors: ['#A52A2A' /*brown*/, '#32CD32' /*limegreen*/, '#87CEEB' /*skyblue*/, '#FFD700' /*gold*/],
 
             start: function(container) {
@@ -652,7 +655,8 @@ function gameFactory(gameNum, level = 'medium') {
                 this.boundMove = this.handleColoringMove.bind(this); this.canvas.addEventListener('mousemove', this.boundMove); this.canvas.addEventListener('touchmove', this.boundMove);
                 this.boundEnd = this.handleColoringEnd.bind(this); this.canvas.addEventListener('mouseup', this.boundEnd); this.canvas.addEventListener('touchend', this.boundEnd);
                 this.canvas.addEventListener('mouseleave', this.boundEnd);
-                this.updateTimer();
+                // Start the tutorial instead of the game directly
+                this.startTutorial();
             },
             resizeCanvas: function() { 
                 this.canvas.width = window.innerWidth * 0.6; 
@@ -668,6 +672,7 @@ function gameFactory(gameNum, level = 'medium') {
                     choice.style.backgroundColor = color;
                     choice.dataset.color = color;
                     choice.onclick = () => {
+                        if (this.tutorialActive) return; // Disable during tutorial
                         this.selectedColor = color;
                         document.querySelectorAll('.color-choice').forEach(c => c.classList.remove('selected'));
                         choice.classList.add('selected');
@@ -701,8 +706,57 @@ function gameFactory(gameNum, level = 'medium') {
                     this.ctx.stroke(shape.path);
                 });
             },
+            startTutorial: function() {
+                this.tutorialActive = true;
+                this.tutorialStep = 0;
+                this.runTutorialStep();
+            },
+            runTutorialStep: function() {
+                if (!this.tutorialActive) return;
+
+                const pointer = document.getElementById('tutorial-pointer') || { style: {} };
+                const palette = document.getElementById('color-palette-5') || { classList: { remove: () => {} } };
+                const canvas = document.getElementById('paintCanvas') || { classList: { remove: () => {} } };
+                
+                // Cleanup previous step
+                if(pointer.style) pointer.style.display = 'none';
+                palette.classList.remove('tutorial-highlight');
+                canvas.classList.remove('tutorial-highlight');
+
+                switch (this.tutorialStep) {
+                    case 0:
+                        speak("First, pick a color from the palette on the left.", true);
+                        pointer.style.display = 'block';
+                        const paletteRect = palette.getBoundingClientRect ? palette.getBoundingClientRect() : { right: 100, top: 100, height: 100 };
+                        pointer.style.transform = `translate(${paletteRect.right}px, ${paletteRect.top + paletteRect.height / 2}px)`;
+                        palette.classList.add('tutorial-highlight');
+                        setTimeout(() => this.runTutorialStep(), 4000);
+                        break;
+                    case 1:
+                        speak("Then, click the matching shape on the canvas to color it in.", true);
+                        const canvasRect = canvas.getBoundingClientRect();
+                        pointer.style.transform = `translate(${canvasRect.left + canvasRect.width/2}px, ${canvasRect.top + canvasRect.height/2}px)`;
+                        palette.classList.remove('tutorial-highlight');
+                        canvas.classList.add('tutorial-highlight');
+                        setTimeout(() => this.runTutorialStep(), 5000);
+                        break;
+                    case 2:
+                        speak("Great! Now it's your turn. Good luck!", true);
+                        canvas.classList.remove('tutorial-highlight');
+                        this.endTutorial();
+                        break;
+                }
+                this.tutorialStep++;
+            },
+            endTutorial: function() {
+                this.tutorialActive = false;
+                const pointer = document.getElementById('tutorial-pointer');
+                if (pointer) pointer.style.display = 'none';
+                // Now that the tutorial is over, start the game timer.
+                this.updateTimer();
+            },
             handleColoringStart: function(e) {
-                if (!this.active || !this.selectedColor) { playTone(200, 0.2, 'square', 0.05); speak("First, pick a color from the palette on the left.", true); return; }
+                if (!this.active || this.tutorialActive || !this.selectedColor) { if (!this.selectedColor) { playTone(200, 0.2, 'square', 0.05); speak("First, pick a color from the palette on the left.", true); } return; }
                 e.preventDefault();
                 this.isColoring = true;
                 this.handleColoringMove(e); // Immediately check for coloring
@@ -867,10 +921,10 @@ function gameFactory(gameNum, level = 'medium') {
                 container.innerHTML = html;
                 const styleEl = document.createElement('style'); styleEl.textContent = css; container.appendChild(styleEl);
                 
-                this.setupPuzzle();
                 // Use custom art if available, otherwise use default
                 this.artPieces = customArtPieces.length > 0 ? customArtPieces : this.defaultArtPieces;
-
+                
+                this.setupPuzzle();
                 this.updateTimer();
             },
             setupPuzzle: function() {
@@ -881,8 +935,8 @@ function gameFactory(gameNum, level = 'medium') {
 
                 const shuffledPieces = [...this.artPieces].sort(() => Math.random() - 0.5);
                 let piecesForLevel = this.artPieces;
-                if (level === 'easy') piecesForLevel = this.artPieces.slice(0, 3);
-                if (level === 'medium') piecesForLevel = this.artPieces.slice(0, 4);
+                if (level === 'easy' && this.artPieces.length >= 3) piecesForLevel = this.artPieces.slice(0, 3);
+                // Medium and Hard will use all available pieces.
 
                 const shuffledSlots = [...piecesForLevel].sort(() => Math.random() - 0.5);
 
@@ -928,7 +982,7 @@ function gameFactory(gameNum, level = 'medium') {
                     slot.textContent = ''; // Remove the word
                     slot.style.backgroundImage = `url(${correctPiece.src})`; // Show the image
                     document.querySelector(`.art-piece[data-id='${droppedId}']`).classList.add('placed');
-                    if (this.piecesPlacedThisRound === shuffledSlots.length) { setTimeout(() => { this.setupPuzzle(); }, 500); }
+                    if (this.piecesPlacedThisRound === this.artPieces.length) { setTimeout(() => { this.setupPuzzle(); }, 500); }
                 } else {
                     this.misses++; document.getElementById('hud-misses7').innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill7" style="background: #ff4757; width: ${Math.min((this.misses / 5) * 100, 100)}%"></div></div>`;
                     slot.classList.add('drop-fail'); playTone(200, 0.3, 'square', 0.05);

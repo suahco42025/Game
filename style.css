@@ -431,6 +431,21 @@ body {
     z-index: 100;
     animation: confettiFall 3s linear forwards;
 }
+.tutorial-pointer {
+    position: absolute;
+    z-index: 1001;
+    font-size: 40px;
+    pointer-events: none;
+    transition: transform 0.5s ease-in-out;
+    filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5));
+}
+.tutorial-highlight {
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 15px 5px #ffc107;
+    border-radius: 15px;
+    z-index: 1000;
+    pointer-events: none;
+    transition: all 0.3s ease-in-out;
+}
 #mobile-prompt {
     position: fixed;
     top: 0;
@@ -461,4 +476,19 @@ body {
 }
 @media (max-width: 550px) {
     #games-section { grid-template-columns: 1fr; }
+}
+.tutorial-pointer {
+    position: absolute;
+    z-index: 1001;
+    font-size: 40px;
+    pointer-events: none;
+    transition: transform 0.5s ease-in-out;
+    filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5));
+}
+.tutorial-highlight {
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 15px 5px #ffc107;
+    border-radius: 15px;
+    z-index: 1000;
+    pointer-events: none;
+    transition: all 0.3s ease-in-out;
 }
