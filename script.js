@@ -615,14 +615,16 @@ function gameFactory(gameNum, level = 'medium') {
             instruction: "Let's paint a picture! Follow the instructions to learn how to play.",
             score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null, canvas: null, ctx: null, selectedColor: null, isColoring: false,
             // Define shapes for our picture. A simple house.
-            shapes: [],
+            shapes: [], // The shapes for the current picture
+            pictures: [], // An array to hold all available picture definitions
+            currentPictureIndex: 0,
             tutorialActive: false,
             boundResize: null, boundStart: null, boundMove: null, boundEnd: null, // For listener removal
             tutorialStep: 0,
-            colors: ['#A52A2A' /*brown*/, '#32CD32' /*limegreen*/, '#87CEEB' /*skyblue*/, '#FFD700' /*gold*/],
-
+            colors: [], // Will be set by the current picture
+            
             start: function(container) {
-                clearGameArea(); this.stop(); this.timeLeft = settings.time;
+                clearGameArea(); this.stop(); this.timeLeft = settings.time; this.currentPictureIndex = 0;
                 this.active = true; this.score = 0; this.misses = 0; this.selectedColor = null;
                 const html = `
                     <div id="game-hud">
@@ -647,6 +649,7 @@ function gameFactory(gameNum, level = 'medium') {
                 container.innerHTML = html + `<style>${css}</style>`;
                 this.canvas = document.getElementById('paintCanvas'); this.ctx = this.canvas.getContext('2d');
                 this.resizeCanvas();
+                this.setupPictures(); // Define all pictures
                 this.setupPalette();
                 this.setupShapes();
                 this.drawAllShapes();
@@ -661,11 +664,12 @@ function gameFactory(gameNum, level = 'medium') {
             resizeCanvas: function() { 
                 this.canvas.width = window.innerWidth * 0.6; 
                 this.canvas.height = window.innerHeight * 0.7;
+                this.setupPictures(); // Recalculate all pictures on resize
                 this.setupShapes(); // Recalculate shape positions on resize
                 this.drawAllShapes();
             },
             setupPalette: function() {
-                const palette = document.getElementById('color-palette-5');
+                const palette = document.getElementById('color-palette-5'); palette.innerHTML = '';
                 this.colors.forEach(color => {
                     const choice = document.createElement('div');
                     choice.className = 'color-choice';
@@ -683,16 +687,53 @@ function gameFactory(gameNum, level = 'medium') {
                     palette.appendChild(choice);
                 });
             },
-            setupShapes: function() {
+            setupPictures: function() {
                 const w = this.canvas.width;
                 const h = this.canvas.height;
-                // Define shapes relative to canvas size
-                this.shapes = [
-                    { path: new Path2D(`M ${w*0.1} ${h*0.9} L ${w*0.1} ${h*0.4} L ${w*0.5} ${h*0.1} L ${w*0.9} ${h*0.4} L ${w*0.9} ${h*0.9} Z`), color: '#87CEEB', filled: false, name: 'sky' },
-                    { path: new Path2D(`M ${w*0.2} ${h*0.9} L ${w*0.2} ${h*0.5} L ${w*0.8} ${h*0.5} L ${w*0.8} ${h*0.9} Z`), color: '#32CD32', filled: false, name: 'grass' },
-                    { path: new Path2D(`M ${w*0.3} ${h*0.6} L ${w*0.3} ${h*0.3} L ${w*0.5} ${h*0.15} L ${w*0.7} ${h*0.3} L ${w*0.7} ${h*0.6} Z`), color: '#A52A2A', filled: false, name: 'house' },
-                    { path: new Path2D(`M ${w*0.4} ${h*0.6} L ${w*0.4} ${h*0.4} L ${w*0.6} ${h*0.4} L ${w*0.6} ${h*0.6} Z`), color: '#FFD700', filled: false, name: 'door' }
+                this.pictures = [
+                    // Picture 1: Monkey Face
+                    {
+                        colors: ['#A0522D', '#DEB887', '#FFC0CB', '#FF69B4'],
+                        shapes: [
+                            { path: new Path2D(`M ${w*0.5} ${h*0.1} C ${w*0.2} ${h*0.1}, ${w*0.1} ${h*0.4}, ${w*0.2} ${h*0.7} C ${w*0.25} ${h*0.9}, ${w*0.75} ${h*0.9}, ${w*0.8} ${h*0.7} C ${w*0.9} ${h*0.4}, ${w*0.8} ${h*0.1}, ${w*0.5} ${h*0.1} Z`), color: '#A0522D', filled: false, name: 'Head' },
+                            { path: new Path2D(`M ${w*0.15} ${h*0.4} C ${w*0.05} ${h*0.4}, ${w*0.1} ${h*0.2}, ${w*0.2} ${h*0.25} Z`), color: '#A0522D', filled: false, name: 'Left Ear' },
+                            { path: new Path2D(`M ${w*0.85} ${h*0.4} C ${w*0.95} ${h*0.4}, ${w*0.9} ${h*0.2}, ${w*0.8} ${h*0.25} Z`), color: '#A0522D', filled: false, name: 'Right Ear' },
+                            { path: new Path2D(`M ${w*0.5} ${h*0.25} C ${w*0.3} ${h*0.25}, ${w*0.25} ${h*0.5}, ${w*0.3} ${h*0.7} C ${w*0.35} ${h*0.8}, ${w*0.65} ${h*0.8}, ${w*0.7} ${h*0.7} C ${w*0.75} ${h*0.5}, ${w*0.7} ${h*0.25}, ${w*0.5} ${h*0.25} Z`), color: '#DEB887', filled: false, name: 'Face' },
+                            { path: new Path2D(`M ${w*0.18} ${h*0.38} C ${w*0.12} ${h*0.38}, ${w*0.15} ${h*0.28}, ${w*0.2} ${h*0.29} Z`), color: '#FFC0CB', filled: false, name: 'Inner Ear' },
+                            { path: new Path2D(`M ${w*0.82} ${h*0.38} C ${w*0.88} ${h*0.38}, ${w*0.85} ${h*0.28}, ${w*0.8} ${h*0.29} Z`), color: '#FFC0CB', filled: false, name: 'Inner Ear' },
+                            { path: new Path2D(`M ${w*0.4} ${h*0.65} Q ${w*0.5} ${h*0.75} ${w*0.6} ${h*0.65}`), color: '#FF69B4', filled: false, name: 'Smile' }
+                        ]
+                    },
+                    // Picture 2: Friendly Robot
+                    {
+                        colors: ['#C0C0C0', '#708090', '#FFD700', '#FF4500'],
+                        shapes: [
+                            { path: new Path2D(`M ${w*0.3} ${h*0.9} L ${w*0.3} ${h*0.5} L ${w*0.7} ${h*0.5} L ${w*0.7} ${h*0.9} Z`), color: '#C0C0C0', filled: false, name: 'Body' },
+                            { path: new Path2D(`M ${w*0.4} ${h*0.5} L ${w*0.4} ${h*0.2} L ${w*0.6} ${h*0.2} L ${w*0.6} ${h*0.5} Z`), color: '#708090', filled: false, name: 'Neck' },
+                            { path: new Path2D(`M ${w*0.35} ${h*0.2} a ${w*0.15} ${h*0.15} 0 1 0 ${w*0.3} 0 a ${w*0.15} ${h*0.15} 0 1 0 -${w*0.3} 0`), color: '#C0C0C0', filled: false, name: 'Head' },
+                            { path: new Path2D(`M ${w*0.42} ${h*0.2} a ${w*0.03} ${h*0.03} 0 1 0 ${w*0.06} 0 a ${w*0.03} ${h*0.03} 0 1 0 -${w*0.06} 0`), color: '#FFD700', filled: false, name: 'Left Eye' },
+                            { path: new Path2D(`M ${w*0.58} ${h*0.2} a ${w*0.03} ${h*0.03} 0 1 0 ${w*0.06} 0 a ${w*0.03} ${h*0.03} 0 1 0 -${w*0.06} 0`), color: '#FFD700', filled: false, name: 'Right Eye' },
+                            { path: new Path2D(`M ${w*0.4} ${h*0.7} L ${w*0.6} ${h*0.7} L ${w*0.6} ${h*0.8} L ${w*0.4} ${h*0.8} Z`), color: '#FF4500', filled: false, name: 'Panel' }
+                        ]
+                    },
+                    // Picture 3: Sailboat
+                    {
+                        colors: ['#87CEEB', '#A52A2A', '#FFFFFF', '#FFD700'],
+                        shapes: [
+                            { path: new Path2D(`M ${w*0.1} ${h*0.9} L ${w*0.9} ${h*0.9} L ${w*0.9} ${h*0.6} L ${w*0.1} ${h*0.6} Z`), color: '#87CEEB', filled: false, name: 'Water' },
+                            { path: new Path2D(`M ${w*0.2} ${h*0.7} L ${w*0.8} ${h*0.7} L ${w*0.7} ${h*0.5} L ${w*0.3} ${h*0.5} Z`), color: '#A52A2A', filled: false, name: 'Boat' },
+                            { path: new Path2D(`M ${w*0.5} ${h*0.5} L ${w*0.5} ${h*0.1} L ${w*0.8} ${h*0.4} Z`), color: '#FFFFFF', filled: false, name: 'Sail' },
+                            { path: new Path2D(`M ${w*0.15} ${h*0.15} a ${w*0.05} ${h*0.05} 0 1 0 ${w*0.1} 0 a ${w*0.05} ${h*0.05} 0 1 0 -${w*0.1} 0`), color: '#FFD700', filled: false, name: 'Sun' }
+                        ]
+                    }
                 ];
+            },
+            setupShapes: function() {
+                const picture = this.pictures[this.currentPictureIndex];
+                // The `setupPictures` function has already created fresh Path2D objects. We just need to copy them.
+                this.shapes = picture.shapes.map(shape => ({ ...shape }));
+                this.colors = picture.colors;
+                this.setupPalette();
             },
             drawAllShapes: function() {
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -781,9 +822,10 @@ function gameFactory(gameNum, level = 'medium') {
                             // Check if all shapes are filled
                             if (this.shapes.every(s => s.filled)) {
                                 setTimeout(() => {
-                                    alert('Great job! You colored the whole picture!');
+                                    speak('Great job! You colored the whole picture! Here is a new one.', true);
                                     this.score += 5; // Bonus for finishing
-                                    this.setupShapes(); // Reset for next round
+                                    this.currentPictureIndex = (this.currentPictureIndex + 1) % this.pictures.length;
+                                    this.setupShapes(); // Load the next picture
                                     this.drawAllShapes();
                                 }, 500);
                             }
@@ -934,11 +976,14 @@ function gameFactory(gameNum, level = 'medium') {
             instruction: "Let's solve a puzzle! Drag the pictures from the left onto the matching words.",
             score: 0, misses: 0, timeLeft: settings.time, active: false, timerId: null, piecesPlacedThisRound: 0,
             defaultArtPieces: [
-                { id: 'piece1', src: 'Arts/Keyboard.png', name: 'Keyboard' },
-                { id: 'piece2', src: 'Arts/Mouse.png', name: 'Mouse' },
-                { id: 'piece3', src: 'Arts/Monitor.png', name: 'Monitor' },
-                { id: 'piece4', src: 'Arts/System Unit.png', name: 'System Unit' },
-                { id: 'piece5', src: 'Arts/Hand on mouse.png', name: 'Hand on Mouse' }
+                { id: 'part1', src: 'Arts/Keyboard.png', name: 'Keyboard' },
+                { id: 'part2', src: 'Arts/Mouse.png', name: 'Mouse' },
+                { id: 'part3', src: 'Arts/Monitor.png', name: 'Monitor' },
+                { id: 'part4', src: 'Arts/System Unit.png', name: 'System Unit' },
+                { id: 'part5', src: 'Arts/Hand on mouse.png', name: 'Hand on Mouse' },
+                { id: 'part6', src: 'Arts/Printer.png', name: 'Printer' },
+                { id: 'part7', src: 'Arts/Speakers.png', name: 'Speakers' },
+                { id: 'part8', src: 'Arts/Webcam.png', name: 'Webcam' }
             ],
             artPieces: [], // This will be populated at start
             start: function(container) {
@@ -1233,7 +1278,10 @@ function gameFactory(gameNum, level = 'medium') {
                 { name: 'Keyboard' },
                 { name: 'Mouse' },
                 { name: 'System Unit' },
-                { name: 'Hand on mouse' }
+                { name: 'Hand on mouse' },
+                { name: 'Printer' },
+                { name: 'Speakers' },
+                { name: 'Webcam' }
             ],
             partsToFind: [],
             currentPart: null,
