@@ -23,7 +23,7 @@
             <p style="font-size: 18px; margin-bottom: 10px;">Who's playing today? 🐵</p>
             <input type="text" id="student-name" placeholder="Student Name (e.g., Johnny)" value="Super Student">
             <input type="text" id="student-class" placeholder="Class/Session (e.g., Morning Stars)" value="Fun Class">
-            <button class="btn btn-primary" onclick="startStudentSession()">Start Adventure! 🚀</button>
+            <button id="start-session-btn" class="btn btn-primary">Start Adventure! 🚀</button>
         </div>
         
         <div id="games-section-wrapper" style="display: none;">
@@ -32,10 +32,10 @@
                 <div id="stars-bar"><div id="stars-fill"></div></div>
             </div>
             <div id="session-controls">
-                <button id="change-student-btn" class="btn btn-secondary btn-small" onclick="showStudentForm()">Change Student 👤</button>
-                <button id="badge-btn" class="btn btn-primary btn-small" onclick="showBadges()">View Badges 🏅</button>
-                <button id="voice-toggle-btn" class="btn btn-primary btn-small" onclick="toggleVoice()">Mute Voice 🔇</button>
-                <button id="custom-art-btn" class="btn btn-primary btn-small" onclick="showArtCustomModal()">Customize Art 🎨</button>
+                <button id="change-student-btn" class="btn btn-secondary btn-small">Change Student 👤</button>
+                <button id="badge-btn" class="btn btn-primary btn-small">View Badges 🏅</button>
+                <button id="voice-toggle-btn" class="btn btn-primary btn-small">Mute Voice 🔇</button>
+                <button id="custom-art-btn" class="btn btn-primary btn-small">Customize Art 🎨</button>
                 <div id="level-selector">
                     <div class="level-option">
                         <input type="radio" id="level-easy" name="game-level" value="easy">
@@ -53,19 +53,20 @@
             </div>
             <div id="games-section">
                 <!-- Simple Creative & Mouse Skills -->
-                <button class="game-card" style="animation-delay: 0.1s;" onclick="loadGame(1)" role="button" aria-label="Play Mouse Trainer Game"><span class="game-card-content"><span class="game-card-icon">🎯</span> Mouse Trainer</span></button>
-                <button class="game-card" style="animation-delay: 0.2s;" onclick="loadGame(2)" role="button" aria-label="Play Banana Chase Game"><span class="game-card-content"><span class="game-card-icon">🍌</span> Banana Chase</span></button>
+                <button class="game-card" style="animation-delay: 0.1s;" data-game-id="1" role="button" aria-label="Play Mouse Trainer Game"><span class="game-card-content"><span class="game-card-icon">🎯</span> Mouse Trainer</span></button>
+                <button class="game-card" style="animation-delay: 0.2s;" data-game-id="2" role="button" aria-label="Play Banana Chase Game"><span class="game-card-content"><span class="game-card-icon">🍌</span> Banana Chase</span></button>
                 <!-- Drag and Drop Skills -->
-                <button class="game-card" style="animation-delay: 0.3s;" onclick="loadGame(6)" role="button" aria-label="Play Fruit Drop Adventure Game"><span class="game-card-content"><span class="game-card-icon">🍎</span> Fruit Drop Adventure</span></button>
-                <button class="game-card" style="animation-delay: 0.4s;" onclick="loadGame(7)" role="button" aria-label="Play Art Puzzle Game"><span class="game-card-content"><span class="game-card-icon">🎨</span> Art Puzzle</span></button>
+                <button class="game-card" style="animation-delay: 0.3s;" data-game-id="6" role="button" aria-label="Play Fruit Drop Adventure Game"><span class="game-card-content"><span class="game-card-icon">🍎</span> Fruit Drop Adventure</span></button>
+                <button class="game-card" style="animation-delay: 0.4s;" data-game-id="7" role="button" aria-label="Play Art Puzzle Game"><span class="game-card-content"><span class="game-card-icon">🎨</span> Art Puzzle</span></button>
                 <!-- Typing Skills -->
-                <button class="game-card" style="animation-delay: 0.5s;" onclick="loadGame(3)" role="button" aria-label="Play Typewriter Game"><span class="game-card-content"><span class="game-card-icon">⌨️</span> Typewriter</span></button>
-                <button class="game-card" style="animation-delay: 0.6s;" onclick="loadGame(4)" role="button" aria-label="Play Word Weaver Game"><span class="game-card-content"><span class="game-card-icon">✏️</span> Word Weaver</span></button>
+                <button class="game-card" style="animation-delay: 0.5s;" data-game-id="3" role="button" aria-label="Play Typewriter Game"><span class="game-card-content"><span class="game-card-icon">⌨️</span> Typewriter</span></button>
+                <button class="game-card" style="animation-delay: 0.6s;" data-game-id="4" role="button" aria-label="Play Word Weaver Game"><span class="game-card-content"><span class="game-card-icon">✏️</span> Word Weaver</span></button>
                 <!-- Creative Game -->
-                <button class="game-card" style="animation-delay: 0.7s;" onclick="loadGame(8)" role="button" aria-label="Play Sentence Scribe Game"><span class="game-card-content"><span class="game-card-icon">📜</span> Sentence Scribe</span></button>                
-                <button class="game-card" style="animation-delay: 0.8s;" onclick="loadGame(9)" role="button" aria-label="Play Story Self Game"><span class="game-card-content"><span class="game-card-icon">✍️</span> Story Self</span></button>                
-                <button class="game-card" style="animation-delay: 0.9s;" onclick="loadGame(10)" role="button" aria-label="Play PC Part Picker Game"><span class="game-card-content"><span class="game-card-icon">🖱️</span> PC Part Picker</span></button>
-                <button class="game-card" style="animation-delay: 1.0s;" onclick="loadGame(5)" role="button" aria-label="Play Rainbow Painter Game"><span class="game-card-content"><span class="game-card-icon">🌈</span> Paint</span></button>
+                <button class="game-card" style="animation-delay: 0.7s;" data-game-id="8" role="button" aria-label="Play Sentence Scribe Game"><span class="game-card-content"><span class="game-card-icon">📜</span> Sentence Scribe</span></button>                
+                <button class="game-card" style="animation-delay: 0.75s;" data-game-id="11" role="button" aria-label="Play Number Matching Game"><span class="game-card-content"><span class="game-card-icon">🔢</span> Number Matching</span></button>                
+                <button class="game-card" style="animation-delay: 0.85s;" data-game-id="9" role="button" aria-label="Play Story Self Game"><span class="game-card-content"><span class="game-card-icon">✍️</span> Story Self</span></button>                
+                <button class="game-card" style="animation-delay: 0.9s;" data-game-id="10" role="button" aria-label="Play PC Part Picker Game"><span class="game-card-content"><span class="game-card-icon">🖱️</span> PC Part Picker</span></button>
+                <button class="game-card" style="animation-delay: 0.95s;" data-game-id="5" role="button" aria-label="Play Rainbow Painter Game"><span class="game-card-content"><span class="game-card-icon">🌈</span> Paint</span></button>
             </div>
         </div>
     </div>
@@ -74,7 +75,7 @@
         <div id="badge-gallery">
             <h2>Your School Badges! 🌟</h2>
             <div id="badge-list"></div>
-            <button class="btn btn-secondary" onclick="hideBadges()">Close</button>
+            <button id="hide-badges-btn" class="btn btn-secondary">Close</button>
         </div>
     </div>
 
@@ -88,8 +89,8 @@
                 <button class="btn btn-primary btn-small" onclick="addCustomArt()">Add Art</button>
             </div>
             <div id="custom-art-list"></div>
-            <button class="btn btn-secondary" onclick="resetCustomArt()">Reset to Default</button>
-            <button class="btn btn-primary" onclick="hideArtCustomModal()">Save & Close</button>
+            <button id="reset-art-btn" class="btn btn-secondary">Reset to Default</button>
+            <button id="close-art-btn" class="btn btn-primary">Save & Close</button>
         </div>
     </div>
 
@@ -102,7 +103,7 @@
         <div>
             <h2>👆 Tap to Play!</h2>
             <p>Touch the screen to start sounds and games. Ooh ooh ah ah!</p>
-            <button class="btn btn-primary" onclick="hideMobilePrompt()">Start Adventure! 🎮</button>
+            <button id="mobile-start-btn" class="btn btn-primary">Start Adventure! 🎮</button>
         </div>
     </div>
 
