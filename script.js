@@ -7,15 +7,28 @@ let sessions = parseInt(localStorage.getItem(`primeSessions_${encodeURIComponent
 let badges = JSON.parse(localStorage.getItem(`primeBadges_${encodeURIComponent(currentStudent.name)}`) || '[]');
 let highScore = parseInt(localStorage.getItem(`primeHighScore_${encodeURIComponent(currentStudent.name)}`) || '0');
 let totalStars = badges.length * 10;
+let overallScore = 0;
 let currentGame = 0;
 let customArtPieces = JSON.parse(localStorage.getItem('primeCustomArt') || '[]');
+let studentList = JSON.parse(localStorage.getItem('primeStudentList') || '[]');
 let audioDebounce = null;
+
+let showcaseTimeout = null;
 
 // Helper to format time as MM:SS
 function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Function to get the current timestamp
+function now() {
+    return Date.now();
+}
+
+function getTimeSpentKey(gameNum) {
+    return `primeTimeSpent_${encodeURIComponent(currentStudent.name)}_Game${gameNum}`;
 }
 
 // Audio helpers
@@ -36,6 +49,7 @@ function playSound(type) {
     if (type === 'hover') { o.frequency.value = 800; g.gain.value = 0.1; o.type = 'sine'; }
     else if (type === 'click') { o.frequency.value = 600; g.gain.value = 0.2; o.type = 'square'; }
     else if (type === 'win') { o.frequency.value = 523; o.frequency.setTargetAtTime(784, globalAudioContext.currentTime + 0.1, 0.1); g.gain.value = 0.15; o.type = 'sine'; }
+    else if (type === 'level-up') { o.frequency.value = 440; o.frequency.setTargetAtTime(880, globalAudioContext.currentTime + 0.1, 0.05); g.gain.value = 0.1; o.type = 'sawtooth'; }
     g.gain.exponentialRampToValueAtTime(0.01, globalAudioContext.currentTime + 0.3);
     o.start(); o.stop(globalAudioContext.currentTime + 0.3);
 }
@@ -95,12 +109,27 @@ function startStudentSession() {
     const oldName = currentStudent.name;
     currentStudent = { name, class: classSession };
     localStorage.setItem('primeStudentData', JSON.stringify(currentStudent));
+
+    // Add student to the global list if they are new
+    if (!studentList.includes(name)) {
+        studentList.push(name);
+        localStorage.setItem('primeStudentList', JSON.stringify(studentList));
+    }
+
     if (oldName !== name) {
         sessions = parseInt(localStorage.getItem(getSafeKey('Sessions')) || '0'); // Use getSafeKey
         badges = JSON.parse(localStorage.getItem(getSafeKey('Badges')) || '[]'); // Use getSafeKey
         highScore = parseInt(localStorage.getItem(getSafeKey('HighScore')) || '0'); // Use getSafeKey
         totalStars = badges.length * 10;
+        calculateOverallScore();
     }
+    // If a showcase is running, load the new student's data but don't overwrite the original student
+    if (showcaseTimeout) {
+        initDisplay();
+        playSound('click');
+        return;
+    }
+
     initDisplay();
     playSound('click');
 }
@@ -110,15 +139,49 @@ function showStudentForm() {
     document.getElementById('games-section-wrapper').style.display = 'none';
 }
 // Student functions
+function deleteStudentRecord() {
+    if (confirm(`Are you sure you want to permanently delete all data for ${currentStudent.name}? This includes all badges, high scores, and play time. This action cannot be undone.`)) {
+        // Remove core data
+        localStorage.removeItem(getSafeKey('Sessions'));
+        localStorage.removeItem(getSafeKey('Badges'));
+        localStorage.removeItem(getSafeKey('HighScore'));
+
+        // Remove time spent for all games
+        Object.keys(gameRegistry).forEach(gameNum => {
+            const timeKey = getTimeSpentKey(gameNum);
+            localStorage.removeItem(timeKey);
+        });
+
+        // Remove student from the global list
+        studentList = studentList.filter(studentName => studentName !== currentStudent.name);
+        localStorage.setItem('primeStudentList', JSON.stringify(studentList));
+
+        // Reset to default student and show form
+        alert(`All records for ${currentStudent.name} have been deleted.`);
+        currentStudent = {name: 'Super Student', class: 'Fun Class'};
+        localStorage.setItem('primeStudentData', JSON.stringify(currentStudent));
+        calculateOverallScore(); // Recalculate for the new/default student
+        showStudentForm();
+    }
+}
+
 function getSafeKey(key) {
     return `prime${key}_${encodeURIComponent(currentStudent.name)}`;
 }
+
+function calculateOverallScore() {
+    overallScore = badges.reduce((acc, badge) => acc + badge.score, 0);
+    return overallScore;
+}
+
 function initDisplay() {
+    calculateOverallScore();
     document.getElementById('student-name-display').textContent = currentStudent.name;
     document.getElementById('student-class-display').textContent = currentStudent.class;
     document.getElementById('session-count').textContent = sessions;
     document.getElementById('badge-count').textContent = badges.length;
     document.getElementById('high-score').textContent = highScore;
+    document.getElementById('overall-score').textContent = overallScore;
     document.getElementById('stars-fill').style.width = Math.min((totalStars / 100) * 100, 100) + '%';
     document.getElementById('student-form').style.display = 'none';
     document.getElementById('games-section-wrapper').style.display = 'block';
@@ -151,6 +214,8 @@ function awardBadge(gameNum, score, misses) {
         localStorage.setItem(getSafeKey('Badges'), JSON.stringify(badges));
         document.getElementById('badge-count').textContent = badges.length;
         totalStars += 10;
+        calculateOverallScore();
+        document.getElementById('overall-score').textContent = overallScore;
         document.getElementById('stars-fill').style.width = Math.min((totalStars / 100) * 100, 100) + '%';
         alert(`🎉 New Badge Earned: ${badgeType} in Game ${gameNum}! Score: ${total}`);
         showConfetti();
@@ -164,16 +229,134 @@ function awardBadge(gameNum, score, misses) {
     }
 }
 
+const gameTitles = {
+    1: 'Mouse Trainer',
+    2: 'Banana Chase',
+    3: 'Typewriter',
+    4: 'Word Weaver',
+    5: 'Rainbow Painter',
+    6: 'Fruit Drop Adventure',
+    7: 'Art Puzzle',
+    8: 'Sentence Scribe',
+    9: 'Story Self',
+    10: 'PC Part Picker',
+    11: 'Number Matching'
+};
+
 function showBadges() {
     playSound('hover');
     const list = document.getElementById('badge-list');
-    list.innerHTML = badges.map(b => `<div class="badge-item">${b.type} (Game ${b.game}, ${b.date}, Score: ${b.score})</div>`).join('');
+    const badgeHTML = badges.length > 0 ? badges.map(b => `<div class="badge-item">${b.type} (Game ${b.game}, ${b.date}, Score: ${b.score})</div>`).join('') : "<p>No badges earned yet. Keep playing!</p>";
+    const timeSpentHTML = Object.keys(gameRegistry).map(gameNum => { const timeKey = getTimeSpentKey(gameNum); const timeMs = parseInt(localStorage.getItem(timeKey) || '0'); const timeFormatted = formatTime(Math.floor(timeMs / 1000)); return `<div class="time-spent-item"><strong>${gameTitles[gameNum] || `Game ${gameNum}`}:</strong> ${timeFormatted}</div>`; }).join('');
+    list.innerHTML = `<div>${badgeHTML}</div><hr><div id="time-spent-section"><h3>Total Play Time ⏱️</h3>${timeSpentHTML}</div>`;
     document.getElementById('badge-modal').style.display = 'flex';
+}
+
+function resetAllTimeSpent() {
+    if (confirm(`Are you sure you want to reset all play time for ${currentStudent.name}? This cannot be undone.`)) {
+        Object.keys(gameRegistry).forEach(gameNum => {
+            const timeKey = getTimeSpentKey(gameNum);
+            localStorage.removeItem(timeKey);
+        });
+        playSound('win');
+        showBadges(); // Refresh the modal to show the reset times
+        alert(`All play time for ${currentStudent.name} has been reset.`);
+    }
 }
 
 function hideBadges() {
     document.getElementById('badge-modal').style.display = 'none';
 }
+
+// --- Leaderboard Functions ---
+function showLeaderboard() {
+    playSound('hover');
+    const leaderboardData = [];
+
+    studentList.forEach(studentName => {
+        const studentBadges = JSON.parse(localStorage.getItem(`primeBadges_${encodeURIComponent(studentName)}`) || '[]');
+        const studentScore = studentBadges.reduce((acc, badge) => acc + badge.score, 0);
+        leaderboardData.push({ name: studentName, score: studentScore });
+    });
+
+    // Sort by score in descending order
+    leaderboardData.sort((a, b) => b.score - a.score);
+
+    const listEl = document.getElementById('leaderboard-list');
+    if (leaderboardData.length > 0) {
+        const icons = ['🥇', '🥈', '🥉'];
+        listEl.innerHTML = leaderboardData.map((student, index) => {
+            const rankIcon = index < 3 ? icons[index] : `<strong>${index + 1}.</strong>`;
+            const studentNameDisplay = index < 3 ? `<strong>${student.name}</strong>` : student.name;
+            return `<li class="leaderboard-item">${rankIcon} ${studentNameDisplay} - ${student.score} points</li>`;
+        }).join('');
+    } else {
+        listEl.innerHTML = '<p>No student data available yet. Keep playing!</p>';
+    }
+
+    document.getElementById('leaderboard-modal').style.display = 'flex';
+}
+function hideLeaderboard() { document.getElementById('leaderboard-modal').style.display = 'none'; }
+
+// --- Top Student Showcase Functions ---
+function startTopStudentsSession() {
+    // Get leaderboard data
+    const leaderboardData = studentList.map(studentName => {
+        const studentBadges = JSON.parse(localStorage.getItem(`primeBadges_${encodeURIComponent(studentName)}`) || '[]');
+        const studentScore = studentBadges.reduce((acc, badge) => acc + badge.score, 0);
+        return { name: studentName, score: studentScore };
+    }).sort((a, b) => b.score - a.score);
+
+    const topStudents = leaderboardData.slice(0, 3);
+
+    if (topStudents.length === 0) {
+        alert("No student data is available to start a showcase session.");
+        return;
+    }
+
+    // Save the original student and disable controls
+    const originalStudent = { ...currentStudent };
+    const controls = document.querySelectorAll('#session-controls button, .game-card');
+    controls.forEach(el => el.disabled = true);
+    speak("Starting the top students showcase!", true);
+
+    let studentIndex = 0;
+
+    function showNextStudent() {
+        if (studentIndex >= topStudents.length) {
+            // End of showcase, restore original student
+            currentStudent = originalStudent;
+            loadStudentData(currentStudent.name);
+            speak("Showcase complete! Welcome back.", true);
+            controls.forEach(el => el.disabled = false);
+            clearTimeout(showcaseTimeout);
+            showcaseTimeout = null;
+            return;
+        }
+
+        const studentToShow = topStudents[studentIndex];
+        const rank = ['First place', 'Second place', 'Third place'][studentIndex];
+        speak(`${rank}, ${studentToShow.name}, with ${studentToShow.score} points!`, true);
+        
+        // Temporarily set and load the top student's data
+        loadStudentData(studentToShow.name);
+
+        studentIndex++;
+        showcaseTimeout = setTimeout(showNextStudent, 5000); // Show each student for 5 seconds
+    }
+
+    showNextStudent();
+}
+
+// --- Settings Modal Functions ---
+function showSettingsModal() {
+    playSound('hover');
+    document.getElementById('settings-modal').style.display = 'flex';
+}
+function hideSettingsModal() {
+    document.getElementById('settings-modal').style.display = 'none';
+}
+
 
 // Custom Art Functions
 function showArtCustomModal() {
@@ -257,6 +440,49 @@ function loadGame(gameNum) {
     }, 500);
 }
 
+// --- New Progress Bar Helper ---
+const progressBarStates = {}; // Keep track of which bars have been filled
+
+function updateProgressBar(barId, label, currentValue, maxValue, isMisses = false) {
+    const hudEl = document.getElementById(barId);
+    if (!hudEl) return;
+
+    const percentage = Math.min((currentValue / maxValue) * 100, 100);
+    const colorStyle = isMisses ? 'style="background: #ff4757;"' : '';
+    hudEl.innerHTML = `${label}: ${currentValue} (${Math.round(percentage)}%) <div class="progress-bar"><div class="progress-fill" ${colorStyle} style="width: ${percentage}%"></div></div>`;
+
+    if (percentage >= 100 && !progressBarStates[barId]) {
+        playSound(isMisses ? 'click' : 'level-up'); // Play a different sound for misses
+        progressBarStates[barId] = true; // Mark as filled
+    } else if (percentage < 100) {
+        progressBarStates[barId] = false; // Reset if the value drops (e.g., new round)
+    }
+}
+
+// --- Certificate Generation ---
+function generateCertificateHTML(gameTitle, studentName, studentClass, score, misses, accuracy) {
+    return `
+        <div style="font-family: 'Fredoka One', 'Comic Sans MS', cursive, sans-serif; text-align: center; padding: 20px; border: 5px solid #4ecdc4; border-radius: 20px; width: 80%; margin: 20px auto;">
+            <h2 style="color: #ff6b35; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Prime Excellence Daycare School</h2>
+            <p style="font-size: 18px;">Certificate of Completion</p>
+            <div style="margin-top: 20px;">
+                <p style="font-size: 24px;">This certificate is awarded to</p>
+                <p style="font-size: 32px; color: #4ecdc4;">${studentName}</p>
+                <p style="font-size: 20px;">From class ${studentClass}</p>
+            </div>
+            <div style="margin-top: 20px;">
+                <p style="font-size: 20px;">For successfully completing the game:</p>
+                <p style="font-size: 24px; color: #ff6b35;">${gameTitle}</p>
+            </div>
+            <div style="margin-top: 20px; border-top: 2px solid #ddd; padding-top: 10px;">
+                <p style="font-size: 18px;">Performance Report:</p>
+                <p>Score: ${score} | Misses: ${misses} | Accuracy: ${accuracy}%</p>
+            </div>
+        </div>`;
+}
+
+
+
 // Back to launcher
 function backToLauncher() {
     playSound('click');
@@ -292,7 +518,9 @@ class BaseGame {
         this.misses = 0;
         this.timeLeft = this.settings.time;
         this.timerId = null;
+        this.paused = false;
         this.container = null;
+        this.startTime = 0;
     }
 
     start(container) {
@@ -303,11 +531,62 @@ class BaseGame {
         this.score = 0;
         this.misses = 0;
         this.timeLeft = this.settings.time;
+        this.paused = false;
+        this.startTime = now();
     }
 
     stop() {
         this.active = false;
+        this.paused = false;
         clearTimeout(this.timerId);
+        const overlay = document.getElementById('pause-overlay');
+        if (overlay) overlay.remove();
+        if (this.startTime > 0) {
+            const endTime = now();
+            const timeSpent = endTime - this.startTime;
+            this.saveTimeSpent(timeSpent);
+        }
+    }
+    printCertificate(gameTitle, score, misses, accuracy) {
+        const certificateHTML = generateCertificateHTML(gameTitle, currentStudent.name, currentStudent.class, score, misses, accuracy);
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(certificateHTML); printWindow.document.close(); printWindow.print();
+    }
+
+    pause() {
+        if (!this.active || this.paused) return;
+        this.paused = true;
+        clearTimeout(this.timerId);
+        speak("Game paused.", true);
+
+        const overlay = document.createElement('div');
+        overlay.id = 'pause-overlay';
+        overlay.innerHTML = `
+            <h2>Paused ⏸️</h2>
+            <button class="btn btn-primary" id="resume-btn">Resume</button>
+        `;
+        this.container.appendChild(overlay);
+        document.getElementById('resume-btn').onclick = () => this.resume();
+    }
+    saveTimeSpent(timeSpent) {
+        const gameTimeSpentKey = getTimeSpentKey(this.gameNum);
+        let existingTime = parseInt(localStorage.getItem(gameTimeSpentKey) || '0');
+        let totalTime = existingTime + timeSpent;
+        localStorage.setItem(gameTimeSpentKey, totalTime.toString());
+    }
+
+
+    resume() {
+        if (!this.active || !this.paused) return;
+        this.paused = false;
+        speak("Resuming.", true);
+        document.getElementById('pause-overlay')?.remove();
+        this.updateTimer(); // Restart the timer loop
+    }
+
+    togglePause() {
+        playSound('click');
+        this.paused ? this.resume() : this.pause();
     }
 
     clearGameArea() {
@@ -318,7 +597,10 @@ class BaseGame {
         const missHtml = missLabel ? `<div class="hud-timer" id="hud-misses${this.gameNum}" style="color: #ff4757;">${missLabel}: 0 <div class="progress-bar"><div class="progress-fill" id="miss-fill${this.gameNum}" style="background: #ff4757;"></div></div></div>` : '';
         return `
             <div id="game-hud" data-game-num="${this.gameNum}">
-                <div class="hud-left"><button class="back-btn" onclick="backToLauncher()" aria-label="Go back home">Swing Home! 🏠</button></div>
+                <div class="hud-left">
+                    <button class="back-btn" onclick="backToLauncher()" aria-label="Go back home">Swing Home! 🏠</button>
+                    <button class="btn btn-secondary btn-small" onclick="currentGame.togglePause()">Pause ⏸️</button>
+                </div>
                 <div class="hud-center">
                     <div class="hud-score" id="hud-score${this.gameNum}">${scoreLabel}: 0 <div class="progress-bar"><div class="progress-fill" id="score-fill${this.gameNum}"></div></div></div>
                     ${missHtml}
@@ -346,8 +628,10 @@ class MouseTrainerGame extends BaseGame {
         const html = `
                     ${this._createHud('Score')}
                     <div id="game-over1" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(0,0,0,0.8); padding: 40px; border-radius: 10px; color: white; display: none;">
-                        <h2>Game Over!</h2>
+                        <h2>Performance Report</h2>
                         <p>Final Score: <span id="final-score1">0</span></p>
+                        <p>Accuracy: <span id="final-accuracy1">0%</span></p>
+                        <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Mouse Trainer', currentGame.score, 0, currentGame.score > 0 ? 100 : 0)">Print Certificate</button>
                         <button onclick="currentGame.start(document.getElementById('game-area'))">Play Again</button>
                     </div>`;
         const css = `
@@ -365,7 +649,7 @@ class MouseTrainerGame extends BaseGame {
     }
 
     createTarget() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         if (this.currentTarget) this.currentTarget.remove();
         const target = document.createElement('div');
         target.className = 'target';
@@ -373,10 +657,11 @@ class MouseTrainerGame extends BaseGame {
         target.style.top = Math.random() * (window.innerHeight - (80 / this.settings.speed)) + 'px';
         
         const handleClick = (e) => {
+            if (this.paused) return;
             if (e.type === 'touchstart') e.preventDefault();
             target.classList.add('clicked');
             this.score++;
-            document.getElementById('hud-score1').innerHTML = `Score: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill1" style="width: ${Math.min((this.score / 50) * 100, 100)}%"></div></div>`;
+            updateProgressBar('hud-score1', 'Score', this.score, 30);
             setTimeout(() => target.remove(), 150);
             this.createTarget();
         };
@@ -388,15 +673,17 @@ class MouseTrainerGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const accuracy = this.score > 0 ? 100 : 0; // No misses in this game
             document.getElementById('final-score1').textContent = this.score;
+            document.getElementById('final-accuracy1').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over1').style.display = 'block';
-            speak(`Game over! Your final score is ${this.score}.`, true);
+            speak(`Game over! Your final score is ${this.score}. Your accuracy was ${accuracy.toFixed(0)} percent.`, true);
             endSession(1, this.score, 0);
         }
     }
@@ -419,7 +706,11 @@ class BananaChaseGame extends BaseGame {
                     <div id="game-hud">
                         ${this._createHud('🍌 Grabbed')}
                     <div id="game-over2" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; box-shadow: 0 0 20px rgba(0,0,0,0.3); display: none;">
-                        <h2>🍌 Jungle Jam! 🍌</h2><p>Final Bananas: <span id="final-score2">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Swing Again!</button>
+                        <h2>🍌 Performance Report 🍌</h2>
+                        <p>Final Bananas: <span id="final-score2">0</span></p>
+                        <p>Accuracy: <span id="final-accuracy2">0%</span></p>
+                        <button onclick="currentGame.start(document.getElementById('game-area'))">Swing Again!</button>
+                        <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Banana Chase', currentGame.score, 0, currentGame.score > 0 ? 100 : 0)">Print Certificate</button>
                     </div>`;
                 const css = `.banana { position: absolute; width: 40px; height: 80px; background: linear-gradient(45deg, #ffd700, #ffed4e); border-radius: 20px 20px 10px 10px; cursor: pointer; transition: transform 0.2s ease; z-index: 5; animation: bob 1.5s ease-in-out infinite; } .banana:hover { transform: scale(1.1) rotate(5deg); } .banana.grabbed { background: linear-gradient(45deg, #4ecdc4, #44a08d); transform: scale(0.9) rotate(-10deg); animation: none; }`;
                 this.container.innerHTML = html;
@@ -428,16 +719,17 @@ class BananaChaseGame extends BaseGame {
     }
 
     createTarget() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         if (this.currentTarget) this.currentTarget.remove();
         const target = document.createElement('div'); target.className = 'banana';
         target.style.left = Math.random() * (window.innerWidth - 40) + 'px';
         target.style.top = Math.random() * (window.innerHeight - 120) + 'px';
         const handleClick = (e) => {
+            if (this.paused) return;
             if (e.type === 'touchstart') e.preventDefault();
             target.classList.add('grabbed'); this.score++;
-            document.getElementById('hud-score2').innerHTML = `🍌 Grabbed: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill2" style="width: ${Math.min((this.score / 30) * 100, 100)}%"></div></div>`;
-            setTimeout(() => target.remove(), 200); this.createTarget();
+            updateProgressBar('hud-score2', '🍌 Grabbed', this.score, 30);
+            setTimeout(() => { target.remove(); this.createTarget(); }, 200);
         };
         target.onclick = target.ontouchstart = handleClick;
         setTimeout(() => { if (target.parentNode && this.active) { target.remove(); this.createTarget(); } }, 5000 / this.settings.speed);
@@ -445,15 +737,17 @@ class BananaChaseGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const accuracy = this.score > 0 ? 100 : 0; // No misses in this game
             document.getElementById('final-score2').textContent = this.score;
+            document.getElementById('final-accuracy2').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over2').style.display = 'block';
-            speak(`Great job! You grabbed ${this.score} bananas.`, true);
+            speak(`Great job! You grabbed ${this.score} bananas with ${accuracy.toFixed(0)} percent accuracy.`, true);
             endSession(2, this.score, 0);
         }
     }
@@ -472,17 +766,17 @@ class TypewriterGame extends BaseGame {
     }
 
     handleKey(e) {
-        initGlobalAudio(); if (!this.active) return;
+        initGlobalAudio(); if (!this.active || this.paused) return;
         const k = e.key.toUpperCase();
         const letterEl = document.getElementById('current-letter');
         if (k === this.currentLetter) {
             clearTimeout(this.letterTimeout); this.score++;
-            document.getElementById('hud-score3').innerHTML = `🍌 Typed: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill3" style="width: ${Math.min((this.score / 30) * 100, 100)}%"></div></div>`;
+            updateProgressBar('hud-score3', '🍌 Typed', this.score, 50);
             letterEl.classList.add('correct'); playTone(440, 0.3, 'sine', 0.1); playTone(880, 0.3, 'sine', 0.1);
             setTimeout(() => { letterEl.classList.remove('correct'); this.updateLetter(); }, 300);
         } else if (/^[A-Z]$/.test(k)) {
             clearTimeout(this.letterTimeout); this.misses++;
-            document.getElementById('hud-misses3').innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill3" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+            updateProgressBar('hud-misses3', '❌ Missed', this.misses, 5, true);
             letterEl.classList.add('wrong'); playTone(200, 0.2, 'square', 0.05);
             speak("Oops, try again!", true);
             setTimeout(() => { letterEl.classList.remove('wrong'); this.startLetterTimer(); }, 500);
@@ -495,7 +789,12 @@ class TypewriterGame extends BaseGame {
                     ${this._createHud('🍌 Typed', '❌ Missed')}
                     <div id="current-letter" style="font-size: 200px; font-weight: bold; color: #ff6b35; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); transition: all 0.3s ease; user-select: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">A</div>
                     <div id="game-over3" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                        <h2>🍌 Typewriter Tango Over! 🍌</h2><p>Final Bananas: <span id="final-score3">0</span></p><p>Misses: <span id="final-misses3">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Type Again!</button>
+                        <h2>🍌 Performance Report 🍌</h2>
+                        <p>Final Score: <span id="final-score3">0</span></p>
+                        <p>Misses: <span id="final-misses3">0</span></p>
+                        <p>Accuracy: <span id="final-accuracy3">0%</span></p>
+                        <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Typewriter Tango', currentGame.score, currentGame.misses, totalAttempts > 0 ? (currentGame.score / totalAttempts) * 100 : 0)">Print Certificate</button>
+                        <button onclick="currentGame.start(document.getElementById('game-area'))">Type Again!</button>
                     </div>`;
         const css = `#current-letter.correct { color: #4ecdc4; transform: translate(-50%, -50%) scale(1.2); } #current-letter.wrong { color: #ff4757; animation: shake 0.5s ease; }`;
         this.container.innerHTML = html;
@@ -514,9 +813,9 @@ class TypewriterGame extends BaseGame {
     startLetterTimer() {
         clearTimeout(this.letterTimeout);
         this.letterTimeout = setTimeout(() => {
-            if (!this.active) return;
+            if (!this.active || this.paused) return;
             this.misses++;
-            document.getElementById('hud-misses3').innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill3" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+            updateProgressBar('hud-misses3', '❌ Missed', this.misses, 5, true);
             const letterEl = document.getElementById('current-letter');
             letterEl.classList.add('wrong'); playTone(200, 0.2, 'square', 0.05);
             setTimeout(() => { letterEl.classList.remove('wrong'); this.updateLetter(); }, 500);
@@ -524,16 +823,19 @@ class TypewriterGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const totalAttempts = this.score + this.misses;
+            const accuracy = totalAttempts > 0 ? (this.score / totalAttempts) * 100 : 0;
             document.getElementById('final-score3').textContent = this.score;
             document.getElementById('final-misses3').textContent = this.misses;
+            document.getElementById('final-accuracy3').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over3').style.display = 'block';
-            speak(`Time's up! You typed ${this.score} letters.`, true);
+            speak(`Time's up! You typed ${this.score} letters with ${accuracy.toFixed(0)} percent accuracy.`, true);
             endSession(3, this.score, this.misses);
         }
     }
@@ -560,13 +862,13 @@ class WordWeaverGame extends BaseGame {
     }
 
     handleKey(e) {
-        initGlobalAudio(); if (!this.active) return;
+        initGlobalAudio(); if (!this.active || this.paused) return;
         const k = e.key.toUpperCase();
         const wordEl = document.getElementById('current-word');
         if (/^[A-Z]$/.test(k)) {
             if (this.typedSoFar + k === this.currentWord) {
                 clearTimeout(this.wordTimeout); this.score++;
-                document.getElementById('hud-score4').innerHTML = `🍌 Words: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill4" style="width: ${Math.min((this.score / 20) * 100, 100)}%"></div></div>`;
+                updateProgressBar('hud-score4', '🍌 Words', this.score, 25);
                 wordEl.classList.add('correct'); playTone(440, 0.4, 'sine', 0.1); playTone(880, 0.4, 'sine', 0.1);
                 setTimeout(() => { wordEl.classList.remove('correct'); this.updateWord(); }, 400);
             } else if (this.currentWord.startsWith(this.typedSoFar + k)) {
@@ -574,7 +876,7 @@ class WordWeaverGame extends BaseGame {
                 document.getElementById('typed-so-far').textContent = this.typedSoFar;
             } else {
                 clearTimeout(this.wordTimeout); this.misses++;
-                document.getElementById('hud-misses4').innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill4" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+                updateProgressBar('hud-misses4', '❌ Missed', this.misses, 5, true);
                 wordEl.classList.add('wrong'); playTone(200, 0.3, 'square', 0.05);
                 this.typedSoFar = ''; document.getElementById('typed-so-far').textContent = '';
                 setTimeout(() => { wordEl.classList.remove('wrong'); this.startWordTimer(); }, 500);
@@ -589,7 +891,12 @@ class WordWeaverGame extends BaseGame {
                     <div id="current-word" style="font-size: 120px; font-weight: bold; color: #ff6b35; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); user-select: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"></div>
                     <div id="typed-so-far" style="position: absolute; top: 45%; left: 50%; transform: translate(-50%, 0); font-size: 40px; color: #4ecdc4; z-index: 10;"></div>
                     <div id="game-over4" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                        <h2>🍌 Word Weaver Womp! 🍌</h2><p>Final Words: <span id="final-score4">0</span></p><p>Misses: <span id="final-misses4">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Weave Again!</button>
+                        <h2>🍌 Performance Report 🍌</h2>
+                        <p>Final Words: <span id="final-score4">0</span></p>
+                        <p>Misses: <span id="final-misses4">0</span></p>
+                        <p>Accuracy: <span id="final-accuracy4">0%</span></p>
+                        <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Word Weaver Womp', currentGame.score, currentGame.misses, totalAttempts > 0 ? (currentGame.score / totalAttempts) * 100 : 0)">Print Certificate</button>
+                        <button onclick="currentGame.start(document.getElementById('game-area'))">Weave Again!</button>
                     </div>`;
         const css = `#current-word.correct { color: #4ecdc4; transform: translate(-50%, -50%) scale(1.1); } #current-word.wrong { color: #ff4757; animation: shake 0.5s ease; }`;
         this.container.innerHTML = html;
@@ -610,8 +917,8 @@ class WordWeaverGame extends BaseGame {
     startWordTimer() {
         clearTimeout(this.wordTimeout);
         this.wordTimeout = setTimeout(() => {
-            if (!this.active) return; this.misses++;
-            document.getElementById('hud-misses4').innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill4" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+            if (!this.active || this.paused) return; this.misses++;
+            updateProgressBar('hud-misses4', '❌ Missed', this.misses, 5, true);
             const wordEl = document.getElementById('current-word');
             wordEl.classList.add('wrong'); playTone(200, 0.3, 'square', 0.05);
             this.typedSoFar = ''; document.getElementById('typed-so-far').textContent = '';
@@ -620,16 +927,19 @@ class WordWeaverGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const totalAttempts = this.score + this.misses;
+            const accuracy = totalAttempts > 0 ? (this.score / totalAttempts) * 100 : 0;
             document.getElementById('final-score4').textContent = this.score;
             document.getElementById('final-misses4').textContent = this.misses;
+            document.getElementById('final-accuracy4').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over4').style.display = 'block';
-            speak(`Finished! You spelled ${this.score} words.`, true);
+            speak(`Finished! You spelled ${this.score} words with ${accuracy.toFixed(0)} percent accuracy.`, true);
             endSession(4, this.score, this.misses);
         }
     }
@@ -669,7 +979,12 @@ class RainbowPainterGame extends BaseGame {
                     <div id="color-palette-5"></div>
                     <canvas id="paintCanvas" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; cursor: not-allowed; touch-action: none;"></canvas>
                     <div id="game-over5" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 192, 203, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                        <h2>🎨 Masterpiece Complete! 🎨</h2><p>Final Score: <span id="final-score5">0</span></p><p>Misses: <span id="final-misses5">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Paint Again!</button>
+                        <h2>🎨 Performance Report 🎨</h2>
+                        <p>Shapes Colored: <span id="final-score5">0</span></p>
+                        <p>Total Shapes: <span id="final-total5">0</span></p>
+                        <p>Completion: <span id="final-accuracy5">0%</span></p>
+                       <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Rainbow Painter', currentGame.score, currentGame.misses, totalShapes > 0 ? (currentGame.score / totalShapes) * 100 : 0)">Print Certificate</button>
+                        <button onclick="currentGame.start(document.getElementById('game-area'))">Paint Again!</button>
                     </div>`;
                 const css = `
                     #color-palette-5 { position: absolute; top: 50%; left: 20px; transform: translateY(-50%); background: rgba(255,255,255,0.8); padding: 10px; border-radius: 15px; display: flex; flex-direction: column; gap: 10px; z-index: 10; }
@@ -828,13 +1143,13 @@ class RainbowPainterGame extends BaseGame {
                 this.updateTimer();
             }
             handleColoringStart(e) {
-                if (!this.active || this.tutorialActive || !this.selectedColor) { if (!this.selectedColor) { playTone(200, 0.2, 'square', 0.05); speak("First, pick a color from the palette on the left.", true); } return; }
+                if (!this.active || this.paused || this.tutorialActive || !this.selectedColor) { if (!this.selectedColor) { playTone(200, 0.2, 'square', 0.05); speak("First, pick a color from the palette on the left.", true); } return; }
                 e.preventDefault();
                 this.isColoring = true;
                 this.handleColoringMove(e); // Immediately check for coloring
             }
             handleColoringMove(e) {
-                if (!this.active || !this.isColoring || !this.selectedColor) return;
+                if (!this.active || this.paused || !this.isColoring || !this.selectedColor) return;
                 e.preventDefault();
                 const rect = this.canvas.getBoundingClientRect();
                 const x = (e.type.includes('touch') ? e.touches[0].clientX : e.clientX) - rect.left;
@@ -847,14 +1162,15 @@ class RainbowPainterGame extends BaseGame {
                         if (this.selectedColor === shape.color) {
                             shape.filled = true;
                             this.score++;
-                            document.getElementById('hud-score5').innerHTML = `🎨 Shapes: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill5" style="width: ${Math.min((this.score / this.shapes.length) * 100, 100)}%"></div></div>`;
+                            const totalShapes = this.pictures.reduce((acc, p) => acc + p.shapes.length, 0);
+                            updateProgressBar('hud-score5', '🎨 Shapes', this.score, totalShapes);
                             playTone(659, 0.2, 'sine', 0.1);
                             this.drawAllShapes();
                             // Check if all shapes are filled
                             if (this.shapes.every(s => s.filled)) {
                                 setTimeout(() => {
                                     speak('Great job! You colored the whole picture! Here is a new one.', true);
-                                    this.score += 5; // Bonus for finishing
+                                    // this.score += 5; // Bonus for finishing - Removed to make progress bar more intuitive
                                     this.currentPictureIndex = (this.currentPictureIndex + 1) % this.pictures.length;
                                     this.setupShapes(); // Load the next picture
                                     this.drawAllShapes();
@@ -867,15 +1183,22 @@ class RainbowPainterGame extends BaseGame {
                 }
             }
             handleColoringEnd(e) {
-                if (!this.active) return;
+                if (!this.active || this.paused) return;
                 e.preventDefault();
                 this.isColoring = false;
             }
             updateTimer() {
-                if (!this.active) return; this.timerId = setTimeout(() => this.updateTimer(), 1000);
+                if (!this.active || this.paused) return; this.timerId = setTimeout(() => this.updateTimer(), 1000);
                 document.getElementById('hud-timer5').innerHTML = `Time: ${formatTime(this.timeLeft)} <div class="progress-bar"><div class="progress-fill" id="timer-fill5" style="width: ${Math.min((300 - this.timeLeft) / 300 * 100, 100)}%"></div></div>`;
                 this.timeLeft--;
-                if (this.timeLeft < 0) { this.stop(); document.getElementById('final-score5').textContent = this.score; document.getElementById('final-misses5').textContent = this.misses; document.getElementById('game-over5').style.display = 'block'; speak(`Time is up! You colored ${this.score} shapes. Well done!`, true); endSession(5, this.score, this.misses); }
+                if (this.timeLeft < 0) {
+                    this.stop();
+                    const totalShapes = this.pictures.reduce((acc, p) => acc + p.shapes.length, 0);
+                    const accuracy = totalShapes > 0 ? (this.score / totalShapes) * 100 : 0;
+                    document.getElementById('final-score5').textContent = this.score;
+                    document.getElementById('final-total5').textContent = totalShapes;
+                    document.getElementById('final-accuracy5').textContent = `${accuracy.toFixed(0)}%`;
+                    document.getElementById('game-over5').style.display = 'block'; speak(`Time is up! You colored ${this.score} out of ${totalShapes} shapes. Well done!`, true); endSession(5, this.score, this.misses); }
             }
             stop() { super.stop(); window.removeEventListener('resize', this.boundResize); if(this.canvas) { this.canvas.removeEventListener('mousedown', this.boundStart); this.canvas.removeEventListener('touchstart', this.boundStart); this.canvas.removeEventListener('mousemove', this.boundMove); this.canvas.removeEventListener('touchmove', this.boundMove); this.canvas.removeEventListener('mouseup', this.boundEnd); this.canvas.removeEventListener('touchend', this.boundEnd); this.canvas.removeEventListener('mouseleave', this.boundEnd); } }
         }
@@ -899,7 +1222,12 @@ class FruitDropGame extends BaseGame {
             ${this._createHud('🍎 Dropped', '❌ Wrong')}
             <div id="monkeys6" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 20px; z-index: 5;"></div>
             <div id="game-over6" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                <h2>🍎 Feeding Frenzy Over! 🍎</h2><p>Final Fruits: <span id="final-score6">0</span></p><p>Wrong Drops: <span id="final-misses6">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Feed Again!</button>
+                <h2>🍎 Performance Report 🍎</h2>
+                <p>Correct Drops: <span id="final-score6">0</span></p>
+                <p>Wrong Drops: <span id="final-misses6">0</span></p>
+                <p>Accuracy: <span id="final-accuracy6">0%</span></p>
+                <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Fruit Drop Adventure', currentGame.score, currentGame.misses, totalAttempts > 0 ? (currentGame.score / totalAttempts) * 100 : 0)">Print Certificate</button>
+                <button onclick="currentGame.start(document.getElementById('game-area'))">Feed Again!</button>
             </div>`;
         const css = `.fruit { position: absolute; font-size: 40px; cursor: grab; transition: transform 0.2s; z-index: 6; user-select: none; } .fruit.dragging { transform: rotate(10deg) scale(1.2); opacity: 0.8; cursor: grabbing; } .monkey-slot { width: 80px; height: 80px; border: 3px dashed #ff6b35; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 10px 0; transition: all 0.3s; } .monkey-slot.drop-success { border-color: #4ecdc4; background: rgba(78, 205, 196, 0.2); transform: scale(1.1); } .monkey-slot.drop-fail { border-color: #ff4757; background: rgba(255, 71, 87, 0.2); animation: shake 0.5s ease; }`;
         this.container.innerHTML = html + `<style>${css}</style>`;
@@ -918,7 +1246,7 @@ class FruitDropGame extends BaseGame {
     }
 
     createFruit() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         if (this.currentFruit) this.currentFruit.remove();
         const idx = Math.floor(Math.random() * this.fruits.length);
         const fruit = document.createElement('div');
@@ -934,7 +1262,7 @@ class FruitDropGame extends BaseGame {
     }
 
     handleDragStart(e) {
-        if (!this.active || this.isDragging) return;
+        if (!this.active || this.paused || this.isDragging) return;
         e.preventDefault();
         this.isDragging = true;
         this.currentFruit.classList.add('dragging');
@@ -950,7 +1278,7 @@ class FruitDropGame extends BaseGame {
     }
 
     handleDragMove(e) {
-        if (!this.isDragging) return;
+        if (!this.isDragging || this.paused) return;
         e.preventDefault();
         const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
         const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
@@ -959,7 +1287,7 @@ class FruitDropGame extends BaseGame {
     }
 
     handleDragEnd(e) {
-        if (!this.isDragging) return;
+        if (!this.isDragging || this.paused) return;
         e.preventDefault();
         this.isDragging = false;
         this.currentFruit.classList.remove('dragging');
@@ -978,14 +1306,14 @@ class FruitDropGame extends BaseGame {
                 droppedOnSlot = true;
                 if (slot.dataset.fruit === droppedFruitType) {
                     this.score++;
-                    document.getElementById(`hud-score${this.gameNum}`).innerHTML = `🍎 Dropped: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill${this.gameNum}" style="width: ${Math.min((this.score / 20) * 100, 100)}%"></div></div>`;
+                    updateProgressBar(`hud-score${this.gameNum}`, '🍎 Dropped', this.score, 25);
                     slot.classList.add('drop-success');
                     playTone(659, 0.2, 'sine', 0.1);
                     setTimeout(() => slot.classList.remove('drop-success'), 500);
                     this.currentFruit.remove();
                 } else {
                     this.misses++;
-                    document.getElementById(`hud-misses${this.gameNum}`).innerHTML = `❌ Wrong: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill${this.gameNum}" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+                    updateProgressBar(`hud-misses${this.gameNum}`, '❌ Wrong', this.misses, 5, true);
                     slot.classList.add('drop-fail');
                     playTone(200, 0.3, 'square', 0.05);
                     speak("Oops, that's the wrong monkey!", true);
@@ -1002,16 +1330,19 @@ class FruitDropGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const totalAttempts = this.score + this.misses;
+            const accuracy = totalAttempts > 0 ? (this.score / totalAttempts) * 100 : 0;
             document.getElementById('final-score6').textContent = this.score;
             document.getElementById('final-misses6').textContent = this.misses;
+            document.getElementById('final-accuracy6').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over6').style.display = 'block';
-            speak(`Feeding time is over! You fed the monkeys ${this.score} times.`, true);
+            speak(`Feeding time is over! You fed the monkeys correctly ${this.score} times with an accuracy of ${accuracy.toFixed(0)} percent.`, true);
             endSession(this.gameNum, this.score, this.misses);
         }
     }
@@ -1052,7 +1383,12 @@ class ArtPuzzleGame extends BaseGame {
             <div id="art-palette"></div>
             <div id="art-canvas"></div>
             <div id="game-over7" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(135, 206, 235, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                <h2>🎨 Puzzle Perfect! 🎨</h2><p>Final Score: <span id="final-score7">0</span></p><p>Misses: <span id="final-misses7">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Create Again!</button>
+                <h2>🎨 Performance Report 🎨</h2>
+                <p>Pieces Placed: <span id="final-score7">0</span></p>
+                <p>Misses: <span id="final-misses7">0</span></p>
+                <p>Accuracy: <span id="final-accuracy7">0%</span></p>
+                <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Art Puzzle', currentGame.score, currentGame.misses, totalAttempts > 0 ? (currentGame.score / totalAttempts) * 100 : 0)">Print Certificate</button>
+                <button onclick="currentGame.start(document.getElementById('game-area'))">Create Again!</button>
             </div>`;
         const css = `
             @keyframes colorful-border { 0% { border-color: #ff6b6b; } 25% { border-color: #feca57; } 50% { border-color: #48dbfb; } 75% { border-color: #ff9ff3; } 100% { border-color: #ff6b6b; } }
@@ -1116,7 +1452,7 @@ class ArtPuzzleGame extends BaseGame {
 
     handleDrop(e) {
         e.preventDefault();
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         const droppedId = e.dataTransfer.getData('text/plain');
         const slot = e.target.closest('.art-slot');
         if (!slot) return;
@@ -1126,7 +1462,7 @@ class ArtPuzzleGame extends BaseGame {
         if (droppedId === slot.dataset.id) {
             this.score++;
             this.piecesPlacedThisRound++;
-            document.getElementById(`hud-score${this.gameNum}`).innerHTML = `🎨 Pieces: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill${this.gameNum}" style="width: ${Math.min((this.score / 50) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-score${this.gameNum}`, '🎨 Pieces', this.score, 20);
             slot.classList.add('drop-success');
             playTone(659, 0.2, 'sine', 0.1);
             slot.textContent = '';
@@ -1140,7 +1476,7 @@ class ArtPuzzleGame extends BaseGame {
             }
         } else {
             this.misses++;
-            document.getElementById(`hud-misses${this.gameNum}`).innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill${this.gameNum}" style="background: #ff4757; width: ${Math.min((this.misses / 5) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-misses${this.gameNum}`, '❌ Missed', this.misses, 10, true);
             slot.classList.add('drop-fail');
             playTone(200, 0.3, 'square', 0.05);
             speak("That piece doesn't fit here. Try another spot.", true);
@@ -1149,16 +1485,19 @@ class ArtPuzzleGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const totalAttempts = this.score + this.misses;
+            const accuracy = totalAttempts > 0 ? (this.score / totalAttempts) * 100 : 0;
             document.getElementById('final-score7').textContent = this.score;
             document.getElementById('final-misses7').textContent = this.misses;
+            document.getElementById('final-accuracy7').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over7').style.display = 'block';
-            speak(`Puzzle time is over! You placed ${this.score} pieces correctly.`, true);
+            speak(`Puzzle time is over! You placed ${this.score} pieces correctly with an accuracy of ${accuracy.toFixed(0)} percent.`, true);
             endSession(this.gameNum, this.score, this.misses);
         }
     }
@@ -1180,7 +1519,7 @@ class SentenceScribeGame extends BaseGame {
 
     handleKey(e) {
         initGlobalAudio();
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         const sentenceEl = document.getElementById('current-sentence');
         if (!sentenceEl) return;
 
@@ -1201,7 +1540,7 @@ class SentenceScribeGame extends BaseGame {
             if (this.typedIndex === this.currentSentence.length) {
                 clearTimeout(this.sentenceTimeout);
                 this.score++;
-                document.getElementById(`hud-score${this.gameNum}`).innerHTML = `📜 Sentences: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill${this.gameNum}" style="width: ${Math.min((this.score / 10) * 100, 100)}%"></div></div>`;
+                updateProgressBar(`hud-score${this.gameNum}`, '📜 Sentences', this.score, 15);
                 sentenceEl.classList.add('correct');
                 playTone(880, 0.3, 'sine', 0.1);
                 setTimeout(() => {
@@ -1211,7 +1550,7 @@ class SentenceScribeGame extends BaseGame {
             }
         } else {
             this.misses++;
-            document.getElementById(`hud-misses${this.gameNum}`).innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill${this.gameNum}" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-misses${this.gameNum}`, '❌ Missed', this.misses, 20, true);
             sentenceEl.classList.add('wrong');
             playTone(200, 0.2, 'square', 0.05);
             speak("Oops!", true);
@@ -1225,7 +1564,12 @@ class SentenceScribeGame extends BaseGame {
             ${this._createHud('📜 Sentences', '❌ Missed')}
             <div id="current-sentence" style="font-size: 4vw; max-width: 80%; font-weight: bold; color: #ff6b35; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); user-select: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255,255,255,0.8); padding: 20px; border-radius: 15px;"></div>
             <div id="game-over8" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                <h2>📜 Scribe Session Over! 📜</h2><p>Final Score: <span id="final-score8">0</span></p><p>Misses: <span id="final-misses8">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Scribe Again!</button>
+                <h2>📜 Performance Report 📜</h2>
+                <p>Sentences Typed: <span id="final-score8">0</span></p>
+                <p>Mistakes: <span id="final-misses8">0</span></p>
+                <p>Accuracy: <span id="final-accuracy8">0%</span></p>
+                <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Sentence Scribe', currentGame.score, currentGame.misses, totalCharsTyped > 0 ? ((totalCharsTyped - currentGame.misses) / totalCharsTyped) * 100 : 0)">Print Certificate</button>
+                <button onclick="currentGame.start(document.getElementById('game-area'))">Scribe Again!</button>
             </div>`;
         const css = `#current-sentence.correct { color: #4ecdc4; } #current-sentence.wrong { animation: shake 0.5s ease; } .typed-char { color: #4ecdc4; } .untyped-char { color: #a0a0a0; }`;
         this.container.innerHTML = html + `<style>${css}</style>`;
@@ -1248,16 +1592,19 @@ class SentenceScribeGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const totalCharsTyped = this.score * (this.currentSentence?.length || 10) + this.misses; // Approximate
+            const accuracy = totalCharsTyped > 0 ? ((totalCharsTyped - this.misses) / totalCharsTyped) * 100 : 0;
             document.getElementById('final-score8').textContent = this.score;
             document.getElementById('final-misses8').textContent = this.misses;
+            document.getElementById('final-accuracy8').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over8').style.display = 'block';
-            speak(`Time's up! You typed ${this.score} sentences.`, true);
+            speak(`Time's up! You typed ${this.score} sentences with about ${accuracy.toFixed(0)} percent accuracy.`, true);
             endSession(this.gameNum, this.score, this.misses);
         }
     }
@@ -1287,7 +1634,11 @@ class StorySelfGame extends BaseGame {
                 <button id="story-submit" class="btn btn-primary" style="margin-top: 20px; font-size: 24px;">Done! 👍</button>
             </div>
             <div id="game-over9" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                <h2>✍️ Story Time Over! ✍️</h2><p>You wrote <span id="final-score9">0</span> stories about yourself!</p><button onclick="currentGame.start(document.getElementById('game-area'))">Write More!</button>
+                <h2>✍️ Performance Report ✍️</h2>
+                <p>You wrote <span id="final-score9">0</span> sentences about yourself!</p>
+                <p>Great job expressing yourself!</p>
+                <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Story Self', currentGame.score, 0, 100)">Print Certificate</button>
+                <button onclick="currentGame.start(document.getElementById('game-area'))">Write More!</button>
             </div>`;
         this.container.innerHTML = html;
         document.getElementById('story-submit').onclick = this.submitAnswer.bind(this);
@@ -1306,10 +1657,11 @@ class StorySelfGame extends BaseGame {
     }
 
     submitAnswer() {
+        if (this.paused) return;
         const answer = document.getElementById('story-input').value.trim();
         if (answer.length > 2) {
             this.score++;
-            document.getElementById(`hud-score${this.gameNum}`).innerHTML = `✍️ Stories: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill${this.gameNum}" style="width: ${Math.min((this.score / 10) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-score${this.gameNum}`, '✍️ Stories', this.score, this.prompts.length);
             playTone(880, 0.3, 'sine', 0.1);
             this.currentPromptIndex++;
             this.updatePrompt();
@@ -1320,7 +1672,7 @@ class StorySelfGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
@@ -1351,7 +1703,12 @@ class PcPartPickerGame extends BaseGame {
                 <div id="pc-picker-area" style="display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; padding: 0 20px;"></div>
             </div>
             <div id="game-over10" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(255, 215, 0, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                <h2>🖱️ Tech Expert! 🖱️</h2><p>You found <span id="final-score10">0</span> parts!</p><p>Misses: <span id="final-misses10">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Identify More!</button>
+                <h2>🖱️ Performance Report 🖱️</h2>
+                <p>Parts Found: <span id="final-score10">0</span></p>
+                <p>Misses: <span id="final-misses10">0</span></p>
+                <p>Accuracy: <span id="final-accuracy10">0%</span></p>
+                <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('PC Part Picker', currentGame.score, currentGame.misses, totalAttempts > 0 ? (currentGame.score / totalAttempts) * 100 : 0)">Print Certificate</button>
+                <button onclick="currentGame.start(document.getElementById('game-area'))">Identify More!</button>
             </div>`;
         const css = `.pc-part-img { max-width: 150px; max-height: 150px; cursor: pointer; border: 5px solid transparent; border-radius: 15px; transition: all 0.2s ease; } .pc-part-img:hover { transform: scale(1.1); border-color: #ffc107; }`;
         this.container.innerHTML = html + `<style>${css}</style>`;
@@ -1395,12 +1752,12 @@ class PcPartPickerGame extends BaseGame {
     }
 
     handleClick(e) {
-        if (!this.active || !this.currentPart) return;
+        if (!this.active || this.paused || !this.currentPart) return;
         const clickedPartName = e.target.dataset.name;
 
         if (clickedPartName === this.currentPart.name) {
             this.score++;
-            document.getElementById(`hud-score${this.gameNum}`).innerHTML = `🖱️ Found: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill${this.gameNum}" style="width: ${Math.min((this.score / 20) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-score${this.gameNum}`, '🖱️ Found', this.score, this.parts.length);
             playTone(880, 0.2, 'sine', 0.1);
             e.target.style.transition = 'transform 0.3s, opacity 0.3s';
             e.target.style.transform = 'scale(0)';
@@ -1408,7 +1765,7 @@ class PcPartPickerGame extends BaseGame {
             setTimeout(() => this.nextPart(), 300);
         } else {
             this.misses++;
-            document.getElementById(`hud-misses${this.gameNum}`).innerHTML = `❌ Missed: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill${this.gameNum}" style="background: #ff4757; width: ${Math.min((this.misses / 10) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-misses${this.gameNum}`, '❌ Missed', this.misses, 5, true);
             playTone(200, 0.3, 'square', 0.05);
             speak("Oops, that's not it. Try again.", true);
             e.target.style.animation = 'shake 0.5s ease';
@@ -1417,16 +1774,19 @@ class PcPartPickerGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const totalAttempts = this.score + this.misses;
+            const accuracy = totalAttempts > 0 ? (this.score / totalAttempts) * 100 : 0;
             document.getElementById('final-score10').textContent = this.score;
             document.getElementById('final-misses10').textContent = this.misses;
+            document.getElementById('final-accuracy10').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over10').style.display = 'block';
-            speak(`Time's up! You identified ${this.score} computer parts. Great work!`, true);
+            speak(`Time's up! You identified ${this.score} computer parts with ${accuracy.toFixed(0)} percent accuracy. Great work!`, true);
             endSession(this.gameNum, this.score, this.misses);
         }
     }
@@ -1449,7 +1809,12 @@ class NumberMatchingGame extends BaseGame {
                 <div id="item-groups-container"></div>
             </div>
             <div id="game-over11" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(135, 206, 235, 0.9); padding: 40px; border-radius: 20px; color: #4a4a4a; display: none;">
-                <h2>🔢 Number Ninja! 🔢</h2><p>Final Score: <span id="final-score11">0</span></p><p>Misses: <span id="final-misses11">0</span></p><button onclick="currentGame.start(document.getElementById('game-area'))">Count Again!</button>
+                <h2>🔢 Performance Report 🔢</h2>
+                <p>Correct Matches: <span id="final-score11">0</span></p>
+                <p>Misses: <span id="final-misses11">0</span></p>
+                <p>Accuracy: <span id="final-accuracy11">0%</span></p>
+                <button class="btn btn-primary btn-small" onclick="currentGame.printCertificate('Number Matching', currentGame.score, currentGame.misses, totalAttempts > 0 ? (currentGame.score / totalAttempts) * 100 : 0)">Print Certificate</button>
+                <button onclick="currentGame.start(document.getElementById('game-area'))">Count Again!</button>
             </div>`;
         const css = `
             #number-matching-area { display: flex; width: 100%; height: 100%; justify-content: space-between; align-items: center; padding: 20px 100px; box-sizing: border-box; }
@@ -1569,7 +1934,7 @@ class NumberMatchingGame extends BaseGame {
     }
 
     handleDragStart(e) {
-        if (this.tutorialActive) { e.preventDefault(); return; }
+        if (this.tutorialActive || this.paused) { e.preventDefault(); return; }
         e.dataTransfer.setData('text/plain', e.target.textContent);
         e.target.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
@@ -1577,21 +1942,21 @@ class NumberMatchingGame extends BaseGame {
 
     handleDrop(e) {
         e.preventDefault();
-        if (this.tutorialActive) return;
+        if (this.tutorialActive || this.paused) return;
         const droppedNum = parseInt(e.dataTransfer.getData('text/plain'), 10);
         const group = e.target.closest('.item-group');
         document.querySelector('.number-to-drag').classList.remove('dragging');
 
         if (group && parseInt(group.dataset.count, 10) === droppedNum) {
             this.score++;
-            document.getElementById(`hud-score${this.gameNum}`).innerHTML = `🔢 Matched: ${this.score} <div class="progress-bar"><div class="progress-fill" id="score-fill${this.gameNum}" style="width: ${Math.min((this.score / 15) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-score${this.gameNum}`, '🔢 Matched', this.score, 20);
             group.classList.add('drop-success');
             playTone(880, 0.3, 'sine', 0.1);
             speak("That's it!", true);
             setTimeout(() => this.setupRound(), 1000);
         } else {
             this.misses++;
-            document.getElementById(`hud-misses${this.gameNum}`).innerHTML = `❌ Wrong: ${this.misses} <div class="progress-bar"><div class="progress-fill" id="miss-fill${this.gameNum}" style="background: #ff4757; width: ${Math.min((this.misses / 5) * 100, 100)}%"></div></div>`;
+            updateProgressBar(`hud-misses${this.gameNum}`, '❌ Wrong', this.misses, 3, true);
             if (group) group.classList.add('drop-fail');
             playTone(200, 0.3, 'square', 0.05);
             speak("Not quite, try again!", true);
@@ -1608,16 +1973,19 @@ class NumberMatchingGame extends BaseGame {
     }
 
     updateTimer() {
-        if (!this.active) return;
+        if (!this.active || this.paused) return;
         this.timerId = setTimeout(() => this.updateTimer(), 1000);
         this._updateTimerDisplay();
         this.timeLeft--;
         if (this.timeLeft < 0) {
             this.stop();
+            const totalAttempts = this.score + this.misses;
+            const accuracy = totalAttempts > 0 ? (this.score / totalAttempts) * 100 : 0;
             document.getElementById('final-score11').textContent = this.score;
             document.getElementById('final-misses11').textContent = this.misses;
+            document.getElementById('final-accuracy11').textContent = `${accuracy.toFixed(0)}%`;
             document.getElementById('game-over11').style.display = 'block';
-            speak(`Time is up! You matched ${this.score} numbers.`, true);
+            speak(`Time is up! You matched ${this.score} numbers with ${accuracy.toFixed(0)} percent accuracy.`, true);
             endSession(this.gameNum, this.score, this.misses);
         }
     }
@@ -1675,11 +2043,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Attach event listeners
     document.addEventListener('keydown', globalKeyHandler);
     document.getElementById('start-session-btn').addEventListener('click', startStudentSession);
-    document.getElementById('change-student-btn').addEventListener('click', showStudentForm);
     document.getElementById('badge-btn').addEventListener('click', showBadges);
+    document.getElementById('leaderboard-btn').addEventListener('click', showLeaderboard);
+    document.getElementById('top-students-session-btn').addEventListener('click', startTopStudentsSession);
+    document.getElementById('settings-btn').addEventListener('click', showSettingsModal);
+    document.getElementById('close-settings-btn').addEventListener('click', hideSettingsModal);
+    document.getElementById('change-student-btn').addEventListener('click', () => { hideSettingsModal(); showStudentForm(); });
+    document.getElementById('delete-student-btn').addEventListener('click', deleteStudentRecord);
     document.getElementById('voice-toggle-btn').addEventListener('click', toggleVoice);
-    document.getElementById('custom-art-btn').addEventListener('click', showArtCustomModal);
+    document.getElementById('custom-art-btn').addEventListener('click', () => { hideSettingsModal(); showArtCustomModal(); });
     document.getElementById('hide-badges-btn').addEventListener('click', hideBadges);
+    document.getElementById('close-leaderboard-btn').addEventListener('click', hideLeaderboard);
+    document.getElementById('reset-time-btn').addEventListener('click', resetAllTimeSpent);
     document.getElementById('reset-art-btn').addEventListener('click', resetCustomArt);
     document.getElementById('close-art-btn').addEventListener('click', hideArtCustomModal);
     document.getElementById('mobile-start-btn').addEventListener('click', hideMobilePrompt);
