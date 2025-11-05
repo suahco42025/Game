@@ -170,7 +170,12 @@ function getSafeKey(key) {
 }
 
 function calculateOverallScore() {
-    overallScore = badges.reduce((acc, badge) => acc + badge.score, 0);
+    if (badges.length === 0) {
+        overallScore = 0;
+    } else {
+        const sumOfScores = badges.reduce((acc, badge) => acc + badge.score, 0);
+        overallScore = Math.round(sumOfScores / badges.length);
+    }
     return overallScore;
 }
 
